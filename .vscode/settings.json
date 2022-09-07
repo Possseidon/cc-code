@@ -4,5 +4,11 @@
         "http",
         "printError",
         "term"
-    ]
+    ],
+    "[lua]": {
+        "gitlens.codeLens.scopes": [
+            "document",
+            "blocks"
+        ]
+    }
 }
