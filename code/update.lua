@@ -24,7 +24,7 @@ addRequests(githubPossseidon .. "lua-lexers/master", "code/lexers", {
   "lexLua.lua",
 })
 
-for _filename, url in pairs(requests) do
+for url, _filename in pairs(requests) do
   assert(http.request(url))
 end
 
