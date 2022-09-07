@@ -14,8 +14,11 @@ end
 local githubPossseidon = "https://raw.githubusercontent.com/Possseidon/"
 
 addRequests(githubPossseidon .. "cc-code/main", "", {
+  "code/highlighter/vscode.lua",
   "code/class.lua",
+  "code/Code.lua",
   "code/Editor.lua",
+  "code/Highlighter.lua",
   "code/update.lua",
   "code.lua",
 })
@@ -25,7 +28,7 @@ addRequests(githubPossseidon .. "lua-lexers/main", "code/lexers", {
 })
 
 for url, _filename in pairs(requests) do
-  assert(http.request { url = url, binary = true })
+  assert(http.request(url))
 end
 
 local function handleEvent(event, ...)
@@ -35,7 +38,7 @@ local function handleEvent(event, ...)
     if filename then
       requests[url] = nil
     end
-    local file = fs.open("/" .. filename, "wb")
+    local file = fs.open("/" .. filename, "w")
     file.write(response.readAll())
     print(filename)
     return true

@@ -1,14 +1,14 @@
 {
     "Lua.diagnostics.globals": [
+        "colors",
         "fs",
         "http",
+        "keys",
+        "multishell",
         "printError",
         "term"
     ],
     "[lua]": {
-        "gitlens.codeLens.scopes": [
-            "document",
-            "blocks"
-        ]
+        "gitlens.codeLens.scopes": []
     }
 }

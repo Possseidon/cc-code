@@ -1,64 +1,22 @@
-local Editor = require "code.Editor"
+local Code = require "code.Code"
 
--- State
-local running = true
-local editors = {}
-local activeEditorIndex = nil
-
--- State Handling
-local function activeEditor()
-  return activeEditorIndex and editors[activeEditorIndex]
+local function printUsage()
+  printError("Usage:")
+  printError("  " .. arg[0] .. " <filename>")
 end
 
--- Event Handlers
-local on = {}
-
-function on:char(char)
-  return true
+local args = { ... }
+if #args ~= 1 then
+  printUsage()
+  return
 end
 
-function on:key(key, held)
-  return true
+local filename = args[1]
+
+if multishell then
+  multishell.setTitle(multishell.getCurrent(), filename)
 end
 
-function on:key_up(key)
-  return true
-end
+local code = Code(filename)
 
-function on:term_resize()
-  return true
-end
-
-function on:mouse_click(button, x, y)
-  return true
-end
-
-function on:mouse_drag(button, x, y)
-  return true
-end
-
-function on:mouse_scroll(direction, x, y)
-  return true
-end
-
-function on:mouse_up(button, x, y)
-  return true
-end
-
-local function processEvent(event, ...)
-  local handler = on[event]
-  if handler then
-    return handler(...)
-  end
-end
-
--- Rendering
-local function render()
-  activeEditor():render()
-end
-
--- Event Loop
-while running do
-  render()
-  while not processEvent(os.pullEvent()) do end
-end
+code:run()
