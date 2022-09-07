@@ -13,14 +13,14 @@ end
 
 local githubPossseidon = "https://raw.githubusercontent.com/Possseidon/"
 
-addRequests(githubPossseidon .. "cc-code/master", "", {
+addRequests(githubPossseidon .. "cc-code/main", "", {
   "code/class.lua",
   "code/Editor.lua",
   "code/update.lua",
   "code.lua",
 })
 
-addRequests(githubPossseidon .. "lua-lexers/master", "code/lexers", {
+addRequests(githubPossseidon .. "lua-lexers/main", "code/lexers", {
   "lexLua.lua",
 })
 

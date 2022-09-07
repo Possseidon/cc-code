@@ -7,5 +7,5 @@ A code editor for ComputerCraft.
 To install, run the following command:
 
 ```sh
-wget run https://raw.githubusercontent.com/Possseidon/cc-code/master/code/update.lua
+wget run https://raw.githubusercontent.com/Possseidon/cc-code/main/code/update.lua
 ```
