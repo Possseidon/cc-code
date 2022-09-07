@@ -330,8 +330,8 @@ function Editor:findWordLeft()
   end
   local line = self._lines.text[y]
   x = math.min(x, #line + 1)
-  while x > 1 and line:sub(x - 1, x - 1):find("%W") do x = x - 1 end
-  while x > 1 and line:sub(x - 1, x - 1):find("%w") do x = x - 1 end
+  while x > 1 and line:sub(x - 1, x - 1):find("[^%w_]") do x = x - 1 end
+  while x > 1 and line:sub(x - 1, x - 1):find("[%w_]") do x = x - 1 end
   return x
 end
 
@@ -359,7 +359,7 @@ function Editor:findWordRight()
   if x > #line then
     return nil
   end
-  return line:find("%f[%w]", x + 1) or #line + 1
+  return line:find("%f[%w_]", x + 1) or #line + 1
 end
 
 function Editor:cursorWordRight(shift)
