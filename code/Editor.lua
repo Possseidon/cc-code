@@ -5,7 +5,7 @@ local Editor = {}
 
 function Editor:new()
   self._lines = {
-    text = {},
+    text = { "" },
     state = {},
     blit = {
       text = {},
@@ -13,6 +13,7 @@ function Editor:new()
       background = {},
     },
   }
+  self._visibleLines = { above = 3, below = 1 }
   self._selection = nil
   self._selectionStart = nil
   self._mouseDown = false
@@ -21,6 +22,7 @@ function Editor:new()
   self._highlighter = Highlighter(require "code.highlighter.vscode")
   self._history = {}
   self._historyIndex = 0
+  self._lineNumberWidth = 3
 end
 
 function Editor:invalidateLine(line)
@@ -71,10 +73,12 @@ function Editor:modifyLine(line, text, cursorX, cursorY)
     editor:invalidateLine(line)
     editor._lines.text[line] = text
     editor:setCursor(cursorX, cursorY)
+    self:makeCursorVisible()
   end, function(editor)
     editor:invalidateLine(line)
     editor._lines.text[line] = original
     editor:setCursor(originalX, originalY)
+    self:makeCursorVisible()
   end)
 end
 
@@ -94,6 +98,7 @@ function Editor:remove(left, right)
   local line = self._lines.text[y]
   if x + left > #line + 1 then
     self:setCursor(x + left - 1, y)
+    self:makeCursorVisible()
   else
     self:modifyLine(y, line:sub(1, x + left - 2) .. line:sub(x + right), x + left - 1, y)
   end
@@ -134,26 +139,26 @@ function Editor:scrollBy(dx, dy)
 end
 
 function Editor:screenToClient(x, y)
-  return x + self._scroll.x, y + self._scroll.y
+  return x + self._scroll.x - self._lineNumberWidth, y + self._scroll.y
 end
 
 function Editor:clientToScreen(x, y)
-  return x - self._scroll.x, y - self._scroll.y
+  return x - self._scroll.x + self._lineNumberWidth, y - self._scroll.y
 end
 
 function Editor:makeCursorVisible()
   local width, height = term.getSize()
   self:scrollTo(
-    math.max(math.min(self._scroll.x, self._cursor.x - 1), self._cursor.x - width),
-    math.max(math.min(self._scroll.y, self._cursor.y - 1), self._cursor.y - height)
-  )
+    math.max(math.min(self._scroll.x, self._cursor.x - 1),
+      self._cursor.x - width + self._lineNumberWidth),
+    math.max(math.min(self._scroll.y, self._cursor.y - 1 - self._visibleLines.above),
+      self._cursor.y - height + self._visibleLines.below))
 end
 
 function Editor:setCursor(x, y, select)
   self._selectionStart = select and (self._selectionStart or { x = self._cursor.x, y = self._cursor.y }) or nil
   self._cursor.x = math.max(1, x or self._cursor.x)
   self._cursor.y = math.min(math.max(1, y or self._cursor.y), #self._lines.text)
-  self:makeCursorVisible()
   if select then
     self:select(self._selectionStart, self._cursor)
   else
@@ -163,11 +168,17 @@ end
 
 function Editor:moveCursor(dx, dy, select)
   self:setCursor(self._cursor.x + dx, self._cursor.y + dy, select)
+  self:makeCursorVisible()
 end
 
 function Editor:click(x, y)
   self:setCursor(self:screenToClient(x, y))
   self._mouseDown = true
+end
+
+function Editor:drag(x, y)
+  x, y = self:screenToClient(x, y)
+  self:setCursor(x, y, true)
 end
 
 function Editor:release()
@@ -184,15 +195,14 @@ function Editor:select(start, stop)
   }
 end
 
-function Editor:drag(x, y)
-  x, y = self:screenToClient(x, y)
-  self:setCursor(x, y, true)
+function Editor:clearHistory()
+  self._history = {}
+  self._historyIndex = 0
 end
 
-function Editor:loadFromFile(filename)
-  local file = fs.open(filename, "rb")
-  local content = file.readAll()
-  file.close()
+function Editor:setContent(content)
+  self:clearHistory()
+
   local lines = {}
   local pos = 1
   while true do
@@ -206,6 +216,15 @@ function Editor:loadFromFile(filename)
     end
   end
   self._lines.text = lines
+  self._lines.state = {}
+end
+
+function Editor:loadFromFile(filename)
+
+  local file = fs.open(filename, "rb")
+  local content = file.readAll() or ""
+  file.close()
+  self:setContent(content)
 end
 
 function Editor:getLineHighlighting(line)
@@ -266,25 +285,28 @@ function Editor:getBlitLine(line)
   local width, _height = term.getSize()
   local scroll = self._scroll.x
 
-  local function makeBlit(text, fill)
-    if scroll < 0 then
-      -- left pad
+  local function makeBlit(text, fill, lineNumberFill)
+    if scroll < 0 then -- left pad
       text = fill:rep(-scroll) .. text
-    else
-      -- left cutoff
+    else -- left cutoff
       text = text:sub(1 + scroll)
     end
-    if #text < width then
-      -- right pad
-      return text .. fill:rep(width - #text)
-    else
-      -- right cutoff
-      return text:sub(1, width)
+    if #text < width then -- right pad
+      text = text .. fill:rep(width - #text)
+    else -- right cutoff
+      text = text:sub(1, width)
     end
+
+    local lineNumber = lineNumberFill and lineNumberFill:rep(self._lineNumberWidth)
+        or self._lineNumberWidth > 0 and ("%" .. self._lineNumberWidth .. "d"):sub(-self._lineNumberWidth):format(line)
+        or ""
+    return lineNumber .. text:sub(1, -self._lineNumberWidth)
   end
 
   local text, color, background = self:getLineHighlighting(line)
-  return makeBlit(text, " "), makeBlit(color, "0"), makeBlit(background, "f")
+  return makeBlit(text, " "),
+      makeBlit(color, colors.toBlit(colors.white), colors.toBlit(colors.black)),
+      makeBlit(background, colors.toBlit(colors.black), colors.toBlit(colors.gray))
 end
 
 function Editor:render()
@@ -302,15 +324,32 @@ function Editor:render()
       term.blit(self:getBlitLine(line))
     end
   end
+end
 
-  term.setCursorPos(self:clientToScreen(self:getCursor()))
-  term.setCursorBlink(true)
+function Editor:isCursorVisible()
+  local x, y = self:clientToScreen(self:getCursor())
+  local width, height = term.getSize()
+  return x >= 1 and x <= width and y >= 1 and y <= height
+end
+
+function Editor:blink()
+  if self:isCursorVisible() then
+    term.setCursorPos(self:clientToScreen(self:getCursor()))
+    term.setCursorBlink(true)
+  else
+    term.setCursorBlink(false)
+  end
+end
+
+function Editor:setLineNumberWidth(width)
+  self._lineNumberWidth = width
 end
 
 function Editor:cursorPreviousLine(shift)
   local _x, y = self:getCursor()
   if y > 1 then
     self:setCursor(#self._lines.text[y - 1] + 1, y - 1, shift)
+    self:makeCursorVisible()
   end
 end
 
@@ -318,6 +357,7 @@ function Editor:cursorLeft(shift)
   local x, y = self:getCursor()
   if x > 1 then
     self:setCursor(x - 1, nil, shift)
+    self:makeCursorVisible()
   else
     self:cursorPreviousLine(shift)
   end
@@ -339,6 +379,7 @@ function Editor:cursorWordLeft(shift)
   local x = self:findWordLeft()
   if x then
     self:setCursor(x, nil, shift)
+    self:makeCursorVisible()
   else
     self:cursorLeft(shift)
   end
@@ -351,6 +392,7 @@ end
 function Editor:cursorNextLine(shift)
   local _x, y = self:getCursor()
   self:setCursor(1, y + 1, shift)
+  self:makeCursorVisible()
 end
 
 function Editor:findWordRight()
@@ -366,6 +408,7 @@ function Editor:cursorWordRight(shift)
   local x = self:findWordRight()
   if x then
     self:setCursor(x, nil, shift)
+    self:makeCursorVisible()
   else
     self:cursorNextLine(shift)
   end
@@ -373,19 +416,23 @@ end
 
 function Editor:cursorLineHome(shift)
   self:setCursor(1, self._cursor.y, shift)
+  self:makeCursorVisible()
 end
 
 function Editor:cursorDocumentHome(shift)
   self:setCursor(1, 1, shift)
+  self:makeCursorVisible()
 end
 
 function Editor:cursorLineEnd(shift)
   self:setCursor(#self._lines.text[self._cursor.y] + 1, self._cursor.y, shift)
+  self:makeCursorVisible()
 end
 
 function Editor:cursorDocumentEnd(shift)
   local y = #self._lines.text
   self:setCursor(#self._lines.text[y] + 1, y, shift)
+  self:makeCursorVisible()
 end
 
 return require "code.class" (Editor)

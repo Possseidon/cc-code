@@ -1,13 +1,84 @@
 local Editor = require "code.Editor"
 
-local Code = {}
-
 local on = {}
+
+function on:char(char)
+  self._editor:insert(char)
+  return true
+end
+
+function on:key(key, _held)
+  if key == keys.leftCtrl or key == keys.rightCtrl then
+    self._modifierKeys.ctrl = true
+  elseif key == keys.leftShift or key == keys.rightShift then
+    self._modifierKeys.shift = true
+  elseif key == keys.leftAlt or key == keys.rightAlt then
+    self._modifierKeys.alt = true
+  else
+    local ctrl = self._modifierKeys.ctrl and "ctrl+" or ""
+    local shift = self._modifierKeys.shift and "shift+" or ""
+    local alt = self._modifierKeys.alt and "alt+" or ""
+    local action = self._actions[ctrl .. shift .. alt .. keys.getName(key)]
+    if action then
+      local ok, err = pcall(action, self)
+      if not ok then
+        -- TODO: self:setStatus(err)
+      end
+      return true
+    end
+  end
+end
+
+function on:key_up(key)
+  if key == keys.leftCtrl or key == keys.rightCtrl then
+    self._modifierKeys.ctrl = false
+  elseif key == keys.leftShift or key == keys.rightShift then
+    self._modifierKeys.shift = false
+  elseif key == keys.leftAlt or key == keys.rightAlt then
+    self._modifierKeys.alt = false
+  end
+end
+
+function on:term_resize()
+  return true
+end
+
+function on:mouse_click(button, x, y)
+  self._editor:click(x, y)
+  return true
+end
+
+function on:mouse_drag(button, x, y)
+  self._editor:drag(x, y)
+  return true
+end
+
+function on:mouse_scroll(direction, x, y)
+  self._editor:scrollBy(0, direction * 3)
+  return true
+end
+
+function on:mouse_up(button, x, y)
+  self._editor:release()
+end
+
+function on:paste(text)
+  if self._modifierKeys.shift then
+    self._editor:insert(text)
+  else
+    self._editor:paste()
+  end
+  return true
+end
+
+local Code = {}
 
 function Code:new(filename)
   self._running = true
+
   self._editor = Editor()
   self._editor:loadFromFile(filename)
+
   self._actions = {}
   self:registerDefaultActions()
 
@@ -62,7 +133,7 @@ function Code:registerDefaultActions()
   -- self:registerScript("ctrl+v", "editor:paste()")
 
   self:registerScript("ctrl+s", "code:save()")
-  self:registerScript("ctrl+w", "code:quit()")
+  self:registerScript("ctrl+f4", "code:quit()")
 end
 
 function Code:createAction(script)
@@ -103,74 +174,6 @@ function Code:quit()
   self._running = false
 end
 
-function on:char(char)
-  self._editor:insert(char)
-  return true
-end
-
-function on:key(key, _held)
-  if key == keys.leftCtrl or key == keys.rightCtrl then
-    self._modifierKeys.ctrl = true
-  elseif key == keys.leftShift or key == keys.rightShift then
-    self._modifierKeys.shift = true
-  elseif key == keys.leftAlt or key == keys.rightAlt then
-    self._modifierKeys.alt = true
-  else
-    local ctrl = self._modifierKeys.ctrl and "ctrl+" or ""
-    local shift = self._modifierKeys.shift and "shift+" or ""
-    local alt = self._modifierKeys.alt and "alt+" or ""
-    local action = self._actions[ctrl .. shift .. alt .. keys.getName(key)]
-    if action then
-      local ok, err = pcall(action, self)
-      if not ok then
-        printError(err)
-      end
-      return true
-    end
-  end
-end
-
-function on:key_up(key)
-  if key == keys.leftCtrl or key == keys.rightCtrl then
-    self._modifierKeys.ctrl = false
-  elseif key == keys.leftShift or key == keys.rightShift then
-    self._modifierKeys.shift = false
-  elseif key == keys.leftAlt or key == keys.rightAlt then
-    self._modifierKeys.alt = false
-  end
-end
-
-function on:term_resize()
-end
-
-function on:mouse_click(button, x, y)
-  self._editor:click(x, y)
-  return true
-end
-
-function on:mouse_drag(button, x, y)
-  self._editor:drag(x, y)
-  return true
-end
-
-function on:mouse_scroll(direction, x, y)
-  self._editor:scrollBy(0, direction * 3)
-  return true
-end
-
-function on:mouse_up(button, x, y)
-  self._editor:release()
-end
-
-function on:paste(text)
-  if self._modifierKeys.shift then
-    self._editor:insert(text)
-  else
-    self._editor:paste()
-  end
-  return true
-end
-
 function Code:processEvent(event, ...)
   local handler = on[event]
   if handler then
@@ -180,6 +183,7 @@ end
 
 function Code:render()
   self._editor:render()
+  self._editor:blink()
 end
 
 function Code:run()

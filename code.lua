@@ -20,3 +20,6 @@ end
 local code = Code(filename)
 
 code:run()
+
+term.setCursorPos(1, 1)
+term.clear()

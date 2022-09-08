@@ -6,7 +6,8 @@
         "keys",
         "multishell",
         "printError",
-        "term"
+        "term",
+        "window"
     ],
     "[lua]": {
         "gitlens.codeLens.scopes": []
