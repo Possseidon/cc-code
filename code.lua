@@ -12,11 +12,6 @@ if #args ~= 1 then
 end
 
 local filename = args[1]
-
-if multishell then
-  multishell.setTitle(multishell.getCurrent(), filename)
-end
-
 local code = Code(filename)
 
 code:run()

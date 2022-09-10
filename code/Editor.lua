@@ -1,6 +1,56 @@
 local lexLua = require "code.lexers.lexLua"
 local Highlighter = require "code.Highlighter"
 
+local function moveTable(from, fromStart, fromEnd, toStart, to)
+  to = to or from
+  if from ~= to or fromStart ~= toStart then
+    if fromStart < toStart then
+      for i = fromEnd, fromStart, -1 do
+        to[i - fromStart + toStart] = from[i]
+      end
+    else
+      for i = fromStart, fromEnd do
+        to[i - fromStart + toStart] = from[i]
+      end
+    end
+  end
+  return to
+end
+
+---Splits the given string on linebreaks.
+---Returns an empty table when passed nil.
+---@param content string?
+---@return string[]
+local function splitLines(content)
+  if not content then return {} end
+  local lines = {}
+  local pos = 1
+  while true do
+    local nextLineBreak = content:find("\n", pos, true)
+    if nextLineBreak then
+      table.insert(lines, content:sub(pos, nextLineBreak - 1))
+      pos = nextLineBreak + 1
+    else
+      table.insert(lines, content:sub(pos))
+      break
+    end
+  end
+  return lines
+end
+
+---Merges the given table of lines into a single string with linebreaks.
+---Similar to splitLines, an empty table returns nil.
+---@param lines string[]
+---@param from integer?
+---@param to integer?
+---@return string?
+local function mergeLines(lines, from, to)
+  -- Technically this should also work, but CC's table.concat implementation is broken regarding nil.
+  -- return #lines > 0 and table.concat(lines, "\n", from, to) or nil
+  return #lines > 0 and table.concat(lines, "\n", from or 1, to or #lines) or nil
+end
+
+---@class Editor
 local Editor = {}
 
 function Editor:new()
@@ -22,9 +72,13 @@ function Editor:new()
   self._highlighter = Highlighter(require "code.highlighter.vscode")
   self._history = {}
   self._historyIndex = 0
+  self._savedHistoryIndex = nil
   self._lineNumberWidth = 3
+  self._tabWidth = 2
 end
 
+---Invalidates the given line, and in turn everything after as well.
+---@param line integer
 function Editor:invalidateLine(line)
   local state = self._lines.state
   for i = line, #state do
@@ -32,14 +86,19 @@ function Editor:invalidateLine(line)
   end
 end
 
+---The current cursor position.
+---@return integer x, integer y
 function Editor:getCursor()
   return self._cursor.x, self._cursor.y
 end
 
+---Whether the undo history contains any entry.
+---@return boolean
 function Editor:canUndo()
   return self._historyIndex > 0
 end
 
+---Reverts the most recent change if possible.
 function Editor:undo()
   if self:canUndo() then
     self._history[self._historyIndex].revert(self)
@@ -47,10 +106,12 @@ function Editor:undo()
   end
 end
 
+---Whether the undo history contains any entries that were previously undone.
 function Editor:canRedo()
   return self._historyIndex < #self._history
 end
 
+---Plays back a single step of the undo history.
 function Editor:redo()
   if self:canRedo() then
     self._historyIndex = self._historyIndex + 1
@@ -58,6 +119,10 @@ function Editor:redo()
   end
 end
 
+---Records and immediately executes an undoable action.
+---Also clears any history that would cause a fork.
+---@param execute fun(editor: Editor)
+---@param revert fun(editor: Editor)
 function Editor:record(execute, revert)
   for i = self._historyIndex + 1, #self._history do
     self._history[i] = nil
@@ -66,61 +131,84 @@ function Editor:record(execute, revert)
   self:redo()
 end
 
-function Editor:modifyLine(line, text, cursorX, cursorY)
-  local original = self._lines.text[line]
-  local originalX, originalY = self:getCursor()
-  self:record(function(editor)
-    editor:invalidateLine(line)
-    editor._lines.text[line] = text
-    editor:setCursor(cursorX, cursorY)
-    self:makeCursorVisible()
-  end, function(editor)
-    editor:invalidateLine(line)
-    editor._lines.text[line] = original
-    editor:setCursor(originalX, originalY)
-    self:makeCursorVisible()
-  end)
-end
+local function makeModifier(from, to, content, cursorX, cursorY)
+  return function(editor)
+    local lines = splitLines(content)
+    local delta = #lines - (to - from + 1)
+    moveTable(editor._lines.text, to + 1, #editor._lines.text, to + 1 + delta)
+    for i = #editor._lines.text + delta + 1, #editor._lines.text do
+      editor._lines.text[i] = nil
+    end
+    moveTable(lines, 1, #lines, from, editor._lines.text)
 
-function Editor:insert(text)
-  local x, y = self:getCursor()
-  local line = self._lines.text[y]
-  if x > #line + 1 then
-    local pad = x - #line - 1
-    self:modifyLine(y, line .. (" "):rep(pad) .. text, x + #text, y)
-  else
-    self:modifyLine(y, line:sub(1, x - 1) .. text .. line:sub(x), x + #text, y)
+    editor:invalidateLine(from)
+    editor:setCursor(cursorX, cursorY)
+    editor:makeCursorVisible()
   end
 end
 
-function Editor:remove(left, right)
+function Editor:replaceLines(from, to, content, cursorX, cursorY)
+  local delta = #splitLines(content) - (to - from + 1)
+  self:record(
+    makeModifier(from, to, content, cursorX, cursorY),
+    makeModifier(from, to + delta, mergeLines(self._lines.text, from, to), self:getCursor()))
+end
+
+function Editor:modifyLine(line, content, cursorX, cursorY)
+  self:replaceLines(line, line, content, cursorX, cursorY)
+end
+
+function Editor:removeLine(line, cursorX, cursorY)
+  self:replaceLines(line, line, nil, cursorX, cursorY)
+end
+
+function Editor:insert(text)
+  local lines = splitLines(text)
+  local x, y = self:getCursor()
+  local cursorX = #lines > 1 and #lines[#lines] or x + #text
+  local original = self._lines.text[y]
+  if x > #original + 1 then
+    local pad = x - #original - 1
+    self:modifyLine(y, original .. (" "):rep(pad) .. text, cursorX, y + #lines - 1)
+  else
+    self:modifyLine(y, original:sub(1, x - 1) .. text .. original:sub(x), cursorX, y + #lines - 1)
+  end
+end
+
+function Editor:remove(from, to)
+  local _x, y = self:getCursor()
+  local line = self._lines.text[y]
+  self:modifyLine(y, line:sub(1, from - 1) .. line:sub(to + 1), from, y)
+end
+
+function Editor:removeRelative(left, right)
   local x, y = self:getCursor()
   local line = self._lines.text[y]
   if x + left > #line + 1 then
     self:setCursor(x + left - 1, y)
     self:makeCursorVisible()
   else
-    self:modifyLine(y, line:sub(1, x + left - 2) .. line:sub(x + right), x + left - 1, y)
+    self:remove(x + left, x + right)
   end
 end
 
 function Editor:backspace()
   -- TODO: Check for selection
-  local x, _y = self:getCursor()
-  if x == 1 then
-    -- TODO: Merge lines
-  else
-    self:remove(0, 0)
+  local x, y = self:getCursor()
+  if x ~= 1 then
+    self:removeRelative(-1, -1)
+  elseif y ~= 1 then
+    self:replaceLines(y - 1, y, self._lines.text[y - 1] .. self._lines.text[y], #self._lines.text[y - 1] + 1, y - 1)
   end
 end
 
 function Editor:delete()
   -- TODO: Check for selection
   local x, y = self:getCursor()
-  if x > #self._lines.text[y] then
-    -- TODO: Merge lines
-  else
-    self:remove(1, 1)
+  if x <= #self._lines.text[y] then
+    self:removeRelative(0, 0)
+  elseif y ~= #self._lines.text then
+    self:replaceLines(y, y + 1, self._lines.text[y] .. self._lines.text[y + 1], x, y)
   end
 end
 
@@ -201,30 +289,11 @@ function Editor:clearHistory()
 end
 
 function Editor:setContent(content)
-  self:clearHistory()
-
-  local lines = {}
-  local pos = 1
-  while true do
-    local nextLineBreak = content:find("\n", pos, true)
-    if nextLineBreak then
-      table.insert(lines, content:sub(pos, nextLineBreak - 1))
-      pos = nextLineBreak + 1
-    else
-      table.insert(lines, content:sub(pos))
-      break
-    end
-  end
-  self._lines.text = lines
-  self._lines.state = {}
+  self:replaceLines(1, #self._lines.text, content, 1, 1)
 end
 
-function Editor:loadFromFile(filename)
-
-  local file = fs.open(filename, "rb")
-  local content = file.readAll() or ""
-  file.close()
-  self:setContent(content)
+function Editor:getContent()
+  return mergeLines(self._lines.text)
 end
 
 function Editor:getLineHighlighting(line)
@@ -297,9 +366,14 @@ function Editor:getBlitLine(line)
       text = text:sub(1, width)
     end
 
-    local lineNumber = lineNumberFill and lineNumberFill:rep(self._lineNumberWidth)
-        or self._lineNumberWidth > 0 and ("%" .. self._lineNumberWidth .. "d"):sub(-self._lineNumberWidth):format(line)
-        or ""
+    if self._lineNumberWidth == 0 then
+      return text
+    end
+
+    local lineNumber = lineNumberFill and lineNumberFill:rep(self._lineNumberWidth) or
+        line >= 1 and line <= #self._lines.text and
+        ("%" .. self._lineNumberWidth .. "d"):format(line):sub(-self._lineNumberWidth) or
+        (" "):rep(self._lineNumberWidth)
     return lineNumber .. text:sub(1, -self._lineNumberWidth)
   end
 
@@ -316,12 +390,11 @@ function Editor:render()
   for i = 1, height do
     local line = i + self._scroll.y
     term.setCursorPos(1, i)
-    if line < 1 then
-      term.clearLine()
-    elseif line > #self._lines.text then
-      term.clearLine()
-    else
+    if line >= 1 and line <= #self._lines.text then
       term.blit(self:getBlitLine(line))
+    else
+      term.setBackgroundColor(colors.gray)
+      term.clearLine()
     end
   end
 end
@@ -433,6 +506,79 @@ function Editor:cursorDocumentEnd(shift)
   local y = #self._lines.text
   self:setCursor(#self._lines.text[y] + 1, y, shift)
   self:makeCursorVisible()
+end
+
+function Editor:enter(fromEndOfLine)
+  if fromEndOfLine then
+    self:cursorLineEnd()
+  end
+  self:insert("\n")
+end
+
+function Editor:tab(shift)
+  local x, y = self:getCursor()
+  if shift then
+    local original = self._lines.text[y]
+    local undented = original:match("^" .. (" ?"):rep(self._tabWidth) .. "(.*)")
+    self:modifyLine(y, undented, x - #original + #undented, y)
+  else
+    self:insert((" "):rep((self._tabWidth - x) % self._tabWidth + 1))
+  end
+end
+
+function Editor:cursorPageUp(select)
+  local _width, height = term.getSize()
+  self:moveCursor(0, 2 - height, select)
+end
+
+function Editor:cursorPageDown(select)
+  local _width, height = term.getSize()
+  self:moveCursor(0, height - 2, select)
+end
+
+function Editor:backspaceWord()
+  local cursorX, _cursorY = self:getCursor()
+  local wordX = self:findWordLeft()
+  if wordX then
+    self:remove(wordX, cursorX - 1)
+  else
+    self:backspace()
+  end
+end
+
+function Editor:deleteWord()
+  local cursorX, _cursorY = self:getCursor()
+  local wordX = self:findWordRight()
+  if wordX then
+    self:remove(cursorX, wordX - 1)
+  else
+    self:delete()
+  end
+end
+
+function Editor:cut()
+  -- TODO
+end
+
+function Editor:copy()
+  -- TODO
+end
+
+function Editor:paste()
+  -- TODO
+end
+
+function Editor:hasChanges()
+  return self._historyIndex ~= self._savedHistoryIndex
+end
+
+function Editor:markSaved()
+  self._savedHistoryIndex = self._historyIndex
+end
+
+function Editor:selectAll()
+  self:cursorDocumentHome()
+  self:cursorDocumentEnd(true)
 end
 
 return require "code.class" (Editor)

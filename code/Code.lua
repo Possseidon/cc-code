@@ -23,6 +23,11 @@ function on:key(key, _held)
       local ok, err = pcall(action, self)
       if not ok then
         -- TODO: self:setStatus(err)
+        printError(err)
+        os.pullEvent("key")
+        self._modifierKeys.ctrl = false
+        self._modifierKeys.shift = false
+        self._modifierKeys.alt = false
       end
       return true
     end
@@ -75,18 +80,40 @@ local Code = {}
 
 function Code:new(filename)
   self._running = true
-
-  self._editor = Editor()
-  self._editor:loadFromFile(filename)
-
+  self._filename = filename
   self._actions = {}
-  self:registerDefaultActions()
 
   self._modifierKeys = {
     ctrl = false,
     shift = false,
     alt = false,
   }
+
+  self._editor = Editor()
+
+  self:registerDefaultActions()
+  self:open(filename)
+  self:updateMultishell()
+end
+
+function Code:open(filename)
+  if fs.exists(filename) then
+    local file = assert(fs.open(filename, "rb"))
+    local content = file.readAll() or ""
+    file.close()
+    self._editor:setContent(content)
+    self._editor:markSaved()
+  end
+end
+
+function Code:updateMultishell()
+  if multishell then
+    local title = fs.getName(self._filename)
+    if self._editor:hasChanges() then
+      title = title .. "*"
+    end
+    multishell.setTitle(multishell.getCurrent(), title)
+  end
 end
 
 function Code:registerDefaultActions()
@@ -101,6 +128,9 @@ function Code:registerDefaultActions()
 
   self:registerScript("shift?+down", "editor:moveCursor(0, 1, shift)")
   self:registerScript("ctrl+down", "editor:scrollBy(0, 1)")
+
+  self:registerScript("shift?+tab", "editor:tab(shift)")
+  self:registerScript("shift?+enter", "editor:enter(shift)")
 
   self:registerScript("backspace", "editor:backspace()")
   self:registerScript("ctrl+backspace", "editor:backspaceWord()")
@@ -133,7 +163,7 @@ function Code:registerDefaultActions()
   -- self:registerScript("ctrl+v", "editor:paste()")
 
   self:registerScript("ctrl+s", "code:save()")
-  self:registerScript("ctrl+f4", "code:quit()")
+  self:registerScript("ctrl+shift?+f4", "code:quit(shift)")
 end
 
 function Code:createAction(script)
@@ -170,8 +200,19 @@ function Code:registerScript(combo, script)
   self:registerAction(combo, self:createAction(script))
 end
 
-function Code:quit()
-  self._running = false
+function Code:quit(force)
+  if force or not self._editor:hasChanges() then
+    self._running = false
+  end
+  -- TODO: Message for normal close without force.
+end
+
+function Code:save()
+  local content = self._editor:getContent()
+  local file = assert(fs.open(self._filename, "wb"))
+  file.write(content)
+  file.close()
+  self._editor:markSaved()
 end
 
 function Code:processEvent(event, ...)
@@ -187,12 +228,17 @@ function Code:render()
 end
 
 function Code:run()
+  local oldTextColor = term.getTextColor()
+  local oldBackgroundColor = term.getBackgroundColor()
   self:render()
   while self._running do
     if self:processEvent(os.pullEvent()) then
       self:render()
+      self:updateMultishell()
     end
   end
+  term.setTextColor(oldTextColor)
+  term.setBackgroundColor(oldBackgroundColor)
 end
 
 return require "code.class" (Code)
