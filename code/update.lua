@@ -40,6 +40,7 @@ local function handleEvent(event, ...)
     end
     local file = fs.open("/" .. filename, "w")
     file.write(response.readAll())
+    file.close()
     print(filename)
     return true
   elseif event == "http_failure" then
