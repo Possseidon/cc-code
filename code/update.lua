@@ -38,7 +38,7 @@ local function handleEvent(event, ...)
     if filename then
       requests[url] = nil
     end
-    local file = fs.open("/" .. filename, "w")
+    local file = fs.open("/" .. filename, "wb")
     file.write(response.readAll())
     file.close()
     print(filename)
