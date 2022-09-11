@@ -6,7 +6,9 @@
         "keys",
         "multishell",
         "printError",
+        "shell",
         "term",
+        "textutils",
         "window"
     ],
     "[lua]": {
