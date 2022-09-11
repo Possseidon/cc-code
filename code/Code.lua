@@ -15,10 +15,15 @@ function on:key(key, _held)
   elseif key == keys.leftAlt or key == keys.rightAlt then
     self._modifierKeys.alt = true
   else
+    local keyName = keys.getName(key)
+    if not keyName then
+      return
+    end
+
     local ctrl = self._modifierKeys.ctrl and "ctrl+" or ""
     local shift = self._modifierKeys.shift and "shift+" or ""
     local alt = self._modifierKeys.alt and "alt+" or ""
-    local action = self._actions[ctrl .. shift .. alt .. keys.getName(key)]
+    local action = self._actions[ctrl .. shift .. alt .. keyName]
     if action then
       local ok, err = pcall(action, self)
       if not ok then
