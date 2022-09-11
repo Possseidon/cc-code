@@ -29,6 +29,7 @@ function on:key(key, _held)
       if not ok then
         -- TODO: self:setStatus(err)
         printError(err)
+        ---@diagnostic disable-next-line: undefined-field
         os.pullEvent("key")
         self._modifierKeys.ctrl = false
         self._modifierKeys.shift = false
@@ -240,6 +241,7 @@ function Code:run()
   local oldBackgroundColor = term.getBackgroundColor()
   self:render()
   while self._running do
+    ---@diagnostic disable-next-line: undefined-field
     if self:processEvent(os.pullEvent()) then
       self:render()
       self:updateMultishell()

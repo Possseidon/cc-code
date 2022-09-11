@@ -54,6 +54,7 @@ local function handleEvent(event, ...)
 end
 
 while next(requests) do
+  ---@diagnostic disable-next-line: undefined-field
   local ok, err = handleEvent(os.pullEvent())
   if not ok then
     printError(err)
