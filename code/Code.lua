@@ -15,6 +15,14 @@ function on:key(key, _held)
   elseif key == keys.leftAlt or key == keys.rightAlt then
     self._modifierKeys.alt = true
   else
+    if self._config.swapYZ then
+      if key == keys.z then
+        key = keys.y
+      elseif key == keys.y then
+        key = keys.z
+      end
+    end
+
     local keyName = keys.getName(key)
     if not keyName then
       return
@@ -23,7 +31,7 @@ function on:key(key, _held)
     local ctrl = self._modifierKeys.ctrl and "ctrl+" or ""
     local shift = self._modifierKeys.shift and "shift+" or ""
     local alt = self._modifierKeys.alt and "alt+" or ""
-    local action = self._actions[ctrl .. shift .. alt .. keyName]
+    local action = self._shortcuts[ctrl .. shift .. alt .. keyName]
     if action then
       local ok, err = pcall(action, self)
       if not ok then
@@ -90,7 +98,7 @@ local new = require "code.class" (Code)
 function Code:new(filename)
   self._running = true
   self._filename = filename
-  self._actions = {}
+  self._shortcuts = {}
 
   self._modifierKeys = {
     ctrl = false,
@@ -101,9 +109,62 @@ function Code:new(filename)
   self._editor = Editor()
   self._savedRevision = nil
 
-  self:registerDefaultActions()
+  self._config = nil
+  self._invalidConfig = false
+
+  self:loadConfig()
+  self:registerDefaultShortcuts()
+  self:registerConfigShortcuts()
   self:open(filename)
   self:updateMultishell()
+end
+
+local configFilename = ".code"
+local defaultConfig = {
+  swapYZ = false,
+  shortcuts = {},
+}
+
+local function cleanConfig(config)
+  for key, value in pairs(config) do
+    if value == defaultConfig[key] or defaultConfig[key] == nil then
+      config[key] = nil
+    end
+  end
+end
+
+function Code:loadConfig()
+  local config
+  if fs.exists(configFilename) then
+    local file = assert(fs.open(configFilename, "rb"))
+    local content = file.readAll()
+    file.close()
+    config = textutils.unserialize(content)
+    if not config then
+      self._invalidConfig = true
+      printError("Invalid config file, using default config.")
+      ---@diagnostic disable-next-line: undefined-field
+      os.pullEvent("key")
+      config = {}
+    end
+    cleanConfig(config)
+  else
+    config = {}
+  end
+  self._config = setmetatable(config, { __index = defaultConfig })
+end
+
+function Code:saveConfig()
+  if self._invalidConfig then return end
+  cleanConfig(self._config)
+  if next(self._config) == nil then
+    fs.delete(configFilename)
+  else
+    local content = textutils.serialize(self._config)
+    local file = assert(fs.open(configFilename, "wb"))
+    file.write(content)
+    file.close()
+  end
 end
 
 function Code:open(filename)
@@ -134,7 +195,7 @@ function Code:markSaved()
   self._savedRevision = self._editor:revision()
 end
 
-function Code:registerDefaultActions()
+function Code:registerDefaultShortcuts()
   self:registerScript("shift?+left", "editor:cursorLeft(shift)")
   self:registerScript("ctrl+shift?+left", "editor:cursorWordLeft(shift)")
 
@@ -184,6 +245,12 @@ function Code:registerDefaultActions()
   self:registerScript("ctrl+shift?+f4", "code:quit(shift)")
 end
 
+function Code:registerConfigShortcuts()
+  for combo, script in pairs(self._config.shortcuts) do
+    self:registerScript(combo, script)
+  end
+end
+
 function Code:createAction(script)
   local env = _ENV
   return assert(load(script, nil, nil, setmetatable({
@@ -210,7 +277,7 @@ function Code:registerAction(combo, action)
     self:registerAction(combo:gsub(optional .. "%?%+", ""), action)
     self:registerAction(combo:gsub(optional .. "%?", optional), action)
   else
-    self._actions[combo] = action
+    self._shortcuts[combo] = action
   end
 end
 
@@ -253,6 +320,9 @@ function Code:run()
       self:render()
       self:updateMultishell()
     end
+  end
+  if fs.combine(self._filename) ~= configFilename then
+    self:saveConfig()
   end
 end
 
