@@ -99,6 +99,7 @@ function Code:new(filename)
   }
 
   self._editor = Editor()
+  self._savedRevision = nil
 
   self:registerDefaultActions()
   self:open(filename)
@@ -111,18 +112,26 @@ function Code:open(filename)
     local content = file.readAll() or ""
     file.close()
     self._editor:setContent(content)
-    self._editor:markSaved()
+    self:markSaved()
   end
 end
 
 function Code:updateMultishell()
   if multishell then
     local title = fs.getName(self._filename)
-    if self._editor:hasChanges() then
+    if not self:saved() then
       title = title .. "*"
     end
     multishell.setTitle(multishell.getCurrent(), title)
   end
+end
+
+function Code:saved()
+  return self._editor:revision() == self._savedRevision
+end
+
+function Code:markSaved()
+  self._savedRevision = self._editor:revision()
 end
 
 function Code:registerDefaultActions()
@@ -210,7 +219,7 @@ function Code:registerScript(combo, script)
 end
 
 function Code:quit(force)
-  if force or not self._editor:hasChanges() then
+  if force or self:saved() then
     self._running = false
   end
   -- TODO: Message for normal close without force.
@@ -221,7 +230,7 @@ function Code:save()
   local file = assert(fs.open(self._filename, "wb"))
   file.write(content)
   file.close()
-  self._editor:markSaved()
+  self:markSaved()
 end
 
 function Code:processEvent(event, ...)

@@ -73,8 +73,7 @@ function Editor:new()
   self._scroll = { x = 0, y = 0 }
   self._highlighter = Highlighter(require "code.highlighter.vscode")
   self._history = {}
-  self._historyIndex = 0
-  self._savedHistoryIndex = nil
+  self._revision = 0
   self._lineNumberWidth = 3
   self._tabWidth = 2
 end
@@ -97,27 +96,27 @@ end
 ---Whether the undo history contains any entry.
 ---@return boolean
 function Editor:canUndo()
-  return self._historyIndex > 0
+  return self._revision > 0
 end
 
 ---Reverts the most recent change if possible.
 function Editor:undo()
   if self:canUndo() then
-    self._history[self._historyIndex].revert(self)
-    self._historyIndex = self._historyIndex - 1
+    self._history[self._revision].revert(self)
+    self._revision = self._revision - 1
   end
 end
 
 ---Whether the undo history contains any entries that were previously undone.
 function Editor:canRedo()
-  return self._historyIndex < #self._history
+  return self._revision < #self._history
 end
 
 ---Plays back a single step of the undo history.
 function Editor:redo()
   if self:canRedo() then
-    self._historyIndex = self._historyIndex + 1
-    self._history[self._historyIndex].execute(self)
+    self._revision = self._revision + 1
+    self._history[self._revision].execute(self)
   end
 end
 
@@ -126,7 +125,7 @@ end
 ---@param execute fun(editor: Editor)
 ---@param revert fun(editor: Editor)
 function Editor:record(execute, revert)
-  for i = self._historyIndex + 1, #self._history do
+  for i = self._revision + 1, #self._history do
     self._history[i] = nil
   end
   table.insert(self._history, { execute = execute, revert = revert })
@@ -287,7 +286,7 @@ end
 
 function Editor:clearHistory()
   self._history = {}
-  self._historyIndex = 0
+  self._revision = 0
 end
 
 function Editor:setContent(content)
@@ -570,12 +569,8 @@ function Editor:paste()
   -- TODO
 end
 
-function Editor:hasChanges()
-  return self._historyIndex ~= self._savedHistoryIndex
-end
-
-function Editor:markSaved()
-  self._savedHistoryIndex = self._historyIndex
+function Editor:revision()
+  return self._revision
 end
 
 function Editor:selectAll()
