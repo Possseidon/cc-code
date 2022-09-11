@@ -242,6 +242,7 @@ function Code:registerDefaultShortcuts()
   -- self:registerScript("ctrl+v", "editor:paste()")
 
   self:registerScript("ctrl+s", "code:save()")
+  self:registerScript("ctrl+d", "code:save()")
   self:registerScript("ctrl+shift?+f4", "code:quit(shift)")
 end
 
