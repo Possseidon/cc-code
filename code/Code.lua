@@ -246,8 +246,6 @@ function Code:render()
 end
 
 function Code:run()
-  local oldTextColor = term.getTextColor()
-  local oldBackgroundColor = term.getBackgroundColor()
   self:render()
   while self._running do
     ---@diagnostic disable-next-line: undefined-field
@@ -256,8 +254,6 @@ function Code:run()
       self:updateMultishell()
     end
   end
-  term.setTextColor(oldTextColor)
-  term.setBackgroundColor(oldBackgroundColor)
 end
 
 return new

@@ -14,7 +14,12 @@ end
 local filename = args[1]
 local code = Code(filename)
 
+local oldTextColor = term.getTextColor()
+local oldBackgroundColor = term.getBackgroundColor()
+
 code:run()
 
-term.setCursorPos(1, 1)
+term.setTextColor(oldTextColor)
+term.setBackgroundColor(oldBackgroundColor)
 term.clear()
+term.setCursorPos(1, 1)
