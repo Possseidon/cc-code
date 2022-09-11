@@ -81,8 +81,11 @@ function on:paste(text)
   return true
 end
 
+---@class Code
 local Code = {}
 
+---@type fun(filename: string): Code
+local new = require "code.class" (Code)
 function Code:new(filename)
   self._running = true
   self._filename = filename
@@ -246,4 +249,4 @@ function Code:run()
   term.setBackgroundColor(oldBackgroundColor)
 end
 
-return require "code.class" (Code)
+return new

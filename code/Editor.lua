@@ -53,6 +53,8 @@ end
 ---@class Editor
 local Editor = {}
 
+---@type fun(): Editor
+local new = require "code.class" (Editor)
 function Editor:new()
   self._lines = {
     text = { "" },
@@ -581,4 +583,4 @@ function Editor:selectAll()
   self:cursorDocumentEnd(true)
 end
 
-return require "code.class" (Editor)
+return new
