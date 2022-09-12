@@ -28,7 +28,7 @@ addRequests(githubPossseidon .. "lua-lexers/main", "code/lexers", {
 })
 
 for url, _filename in pairs(requests) do
-  assert(http.request(url))
+  assert(http.request { url = url, binary = true })
 end
 
 local function handleEvent(event, ...)
