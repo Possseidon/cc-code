@@ -578,4 +578,20 @@ function Editor:selectAll()
   self:cursorDocumentEnd(true)
 end
 
+function Editor:swapLineUp()
+  -- TODO: Swap all selected lines
+  local x, y = self:getCursor()
+  if y > 1 then
+    self:replaceLines(y - 1, y, self._lines.text[y] .. "\n" .. self._lines.text[y - 1], x, y - 1)
+  end
+end
+
+function Editor:swapLineDown()
+  -- TODO: Swap all selected lines
+  local x, y = self:getCursor()
+  if y < #self._lines.text then
+    self:replaceLines(y, y + 1, self._lines.text[y + 1] .. "\n" .. self._lines.text[y], x, y + 1)
+  end
+end
+
 return new

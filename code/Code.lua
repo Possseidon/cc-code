@@ -202,9 +202,11 @@ function Code:registerDefaultShortcuts()
   self:registerScript("shift?+right", "editor:cursorRight(shift)")
   self:registerScript("ctrl+shift?+right", "editor:cursorWordRight(shift)")
 
+  self:registerScript("alt+up", "editor:swapLineUp()")
   self:registerScript("shift?+up", "editor:moveCursor(0, -1, shift)")
   self:registerScript("ctrl+up", "editor:scrollBy(0, -1)")
 
+  self:registerScript("alt+down", "editor:swapLineDown()")
   self:registerScript("shift?+down", "editor:moveCursor(0, 1, shift)")
   self:registerScript("ctrl+down", "editor:scrollBy(0, 1)")
 
