@@ -246,6 +246,18 @@ function Code:registerDefaultShortcuts()
   self:registerScript("ctrl+s", "code:save()")
   self:registerScript("ctrl+d", "code:save()")
   self:registerScript("ctrl+shift?+f4", "code:quit(shift)")
+
+  -- Using shortcuts to switch tabs doesn't work because of modifier keys.
+  -- Modifier keys would need to be stored globally e.g. in a file.
+  -- self:registerScript("ctrl+shift?+tab", "code:switchTab(shift)")
+end
+
+function Code:switchTab(back)
+  if multishell then
+    local current = multishell.getCurrent()
+    if current ~= multishell.getFocus() then return end
+    multishell.setFocus((back and current - 2 or current) % multishell.getCount() + 1)
+  end
 end
 
 function Code:registerConfigShortcuts()
