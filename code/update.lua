@@ -19,7 +19,6 @@ addRequests(githubPossseidon .. "cc-code/main", "", {
   "code/Code.lua",
   "code/Editor.lua",
   "code/Highlighter.lua",
-  "code/update.lua",
   "code.lua",
 })
 
