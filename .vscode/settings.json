@@ -13,5 +13,6 @@
     ],
     "[lua]": {
         "gitlens.codeLens.scopes": []
-    }
+    },
+    "Lua.workspace.checkThirdParty": false
 }
