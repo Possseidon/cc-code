@@ -3,8 +3,13 @@ print("Installing cc-code...")
 fs.delete("code.lua")
 fs.delete("code")
 
+---@type table<string, string>
 local requests = {}
 
+---TODO
+---@param urlBase string
+---@param root string
+---@param filenames string[]
 local function addRequests(urlBase, root, filenames)
   for _, filename in ipairs(filenames) do
     requests[urlBase .. "/" .. filename] = root .. "/" .. filename
@@ -30,6 +35,10 @@ for url, _filename in pairs(requests) do
   assert(http.request { url = url, binary = true })
 end
 
+---TODO
+---@param event string
+---@param ... any
+---@return boolean ok, string? error
 local function handleEvent(event, ...)
   if event == "http_success" then
     local url, response = ...

@@ -1,21 +1,33 @@
 local Editor = require "code.Editor"
 
+---@alias Action fun()
+
+---@type table<string, fun(code: Code, ...): ...>
 local on = {}
 
-function on:char(char)
-  self._editor:insert(char)
+---TODO
+---@param code Code
+---@param char string
+---@return boolean?
+function on.char(code, char)
+  code._editor:insert(char)
   return true
 end
 
-function on:key(key, _held)
+---TODO
+---@param code Code
+---@param key integer
+---@param _held boolean
+---@return boolean?
+function on.key(code, key, _held)
   if key == keys.leftCtrl or key == keys.rightCtrl then
-    self._modifierKeys.ctrl = true
+    code._modifierKeys.ctrl = true
   elseif key == keys.leftShift or key == keys.rightShift then
-    self._modifierKeys.shift = true
+    code._modifierKeys.shift = true
   elseif key == keys.leftAlt or key == keys.rightAlt then
-    self._modifierKeys.alt = true
+    code._modifierKeys.alt = true
   else
-    if self._config.swapYZ then
+    if code._config.swapYZ then
       if key == keys.z then
         key = keys.y
       elseif key == keys.y then
@@ -28,64 +40,99 @@ function on:key(key, _held)
       return
     end
 
-    local ctrl = self._modifierKeys.ctrl and "ctrl+" or ""
-    local shift = self._modifierKeys.shift and "shift+" or ""
-    local alt = self._modifierKeys.alt and "alt+" or ""
-    local action = self._shortcuts[ctrl .. shift .. alt .. keyName]
+    local ctrl = code._modifierKeys.ctrl and "ctrl+" or ""
+    local shift = code._modifierKeys.shift and "shift+" or ""
+    local alt = code._modifierKeys.alt and "alt+" or ""
+    local action = code._shortcuts[ctrl .. shift .. alt .. keyName]
     if action then
-      local ok, err = pcall(action, self)
+      local ok, err = pcall(action, code)
       if not ok then
         -- TODO: self:setStatus(err)
         printError(err)
         ---@diagnostic disable-next-line: undefined-field
         os.pullEvent("key")
-        self._modifierKeys.ctrl = false
-        self._modifierKeys.shift = false
-        self._modifierKeys.alt = false
+        code._modifierKeys.ctrl = false
+        code._modifierKeys.shift = false
+        code._modifierKeys.alt = false
       end
       return true
     end
   end
 end
 
-function on:key_up(key)
+---TODO
+---@param code Code
+---@param key integer
+---@return boolean?
+function on.key_up(code, key)
   if key == keys.leftCtrl or key == keys.rightCtrl then
-    self._modifierKeys.ctrl = false
+    code._modifierKeys.ctrl = false
   elseif key == keys.leftShift or key == keys.rightShift then
-    self._modifierKeys.shift = false
+    code._modifierKeys.shift = false
   elseif key == keys.leftAlt or key == keys.rightAlt then
-    self._modifierKeys.alt = false
+    code._modifierKeys.alt = false
   end
 end
 
-function on:term_resize()
+---TODO
+---@param _code Code
+---@return boolean?
+function on.term_resize(_code)
   return true
 end
 
-function on:mouse_click(button, x, y)
-  self._editor:click(x, y)
+---TODO
+---@param code Code
+---@param button integer
+---@param x integer
+---@param y integer
+---@return boolean?
+function on.mouse_click(code, button, x, y)
+  code._editor:click(x, y)
   return true
 end
 
-function on:mouse_drag(button, x, y)
-  self._editor:drag(x, y)
+---TODO
+---@param code Code
+---@param button integer
+---@param x integer
+---@param y integer
+---@return boolean?
+function on.mouse_drag(code, button, x, y)
+  code._editor:drag(x, y)
   return true
 end
 
-function on:mouse_scroll(direction, x, y)
-  self._editor:scrollBy(0, direction * 3)
+---TODO
+---@param code Code
+---@param direction integer
+---@param _x integer
+---@param _y integer
+---@return boolean?
+function on.mouse_scroll(code, direction, _x, _y)
+  code._editor:scrollBy(0, direction * 3)
   return true
 end
 
-function on:mouse_up(button, x, y)
-  self._editor:release()
+---TODO
+---@param code Code
+---@param _button integer
+---@param _x integer
+---@param _y integer
+---@return boolean?
+function on.mouse_up(code, _button, _x, _y)
+  code._editor:release()
 end
 
-function on:paste(text)
-  if self._modifierKeys.shift then
-    self._editor:insert(text)
+---TODO
+---@param code Code
+---@param text string
+---@return boolean?
+function on.paste(code, text)
+  if code._modifierKeys.shift then
+    code._editor:insert(text)
   else
-    self._editor:paste()
+    code._editor:paste()
   end
   return true
 end
@@ -125,6 +172,8 @@ local defaultConfig = {
   shortcuts = {},
 }
 
+---TODO
+---@param config table<string, any>
 local function cleanConfig(config)
   for key, value in pairs(config) do
     if value == defaultConfig[key] or defaultConfig[key] == nil then
@@ -133,6 +182,7 @@ local function cleanConfig(config)
   end
 end
 
+---TODO
 function Code:loadConfig()
   local config
   if fs.exists(configFilename) then
@@ -154,6 +204,7 @@ function Code:loadConfig()
   self._config = setmetatable(config, { __index = defaultConfig })
 end
 
+---TODO
 function Code:saveConfig()
   if self._invalidConfig then return end
   cleanConfig(self._config)
@@ -167,6 +218,8 @@ function Code:saveConfig()
   end
 end
 
+---TODO
+---@param filename string
 function Code:open(filename)
   if fs.exists(filename) then
     local file = assert(fs.open(filename, "rb"))
@@ -177,6 +230,7 @@ function Code:open(filename)
   end
 end
 
+---TODO
 function Code:updateMultishell()
   if multishell then
     local title = fs.getName(self._filename)
@@ -187,14 +241,18 @@ function Code:updateMultishell()
   end
 end
 
+---TODO
+---@return boolean
 function Code:saved()
   return self._editor:revision() == self._savedRevision
 end
 
+---TODO
 function Code:markSaved()
   self._savedRevision = self._editor:revision()
 end
 
+---TODO
 function Code:registerDefaultShortcuts()
   self:registerScript("shift?+left", "editor:cursorLeft(shift)")
   self:registerScript("ctrl+shift?+left", "editor:cursorWordLeft(shift)")
@@ -252,6 +310,8 @@ function Code:registerDefaultShortcuts()
   -- self:registerScript("ctrl+shift?+tab", "code:switchTab(shift)")
 end
 
+---TODO
+---@param back boolean?
 function Code:switchTab(back)
   if multishell then
     local current = multishell.getCurrent()
@@ -260,12 +320,16 @@ function Code:switchTab(back)
   end
 end
 
+---TODO
 function Code:registerConfigShortcuts()
   for combo, script in pairs(self._config.shortcuts) do
     self:registerScript(combo, script)
   end
 end
 
+---TODO
+---@param script string
+---@return Action
 function Code:createAction(script)
   local env = _ENV
   return assert(load(script, nil, nil, setmetatable({
@@ -286,6 +350,9 @@ function Code:createAction(script)
   })))
 end
 
+---TODO
+---@param combo string
+---@param action Action
 function Code:registerAction(combo, action)
   local optional = combo:match("(%w+)%?%+")
   if optional then
@@ -296,10 +363,15 @@ function Code:registerAction(combo, action)
   end
 end
 
+---TODO
+---@param combo string
+---@param script string
 function Code:registerScript(combo, script)
   self:registerAction(combo, self:createAction(script))
 end
 
+---TODO
+---@param force boolean?
 function Code:quit(force)
   if force or self:saved() then
     self._running = false
@@ -307,6 +379,7 @@ function Code:quit(force)
   -- TODO: Message for normal close without force.
 end
 
+---TODO
 function Code:save()
   local content = self._editor:getContent()
   local file = assert(fs.open(self._filename, "wb"))
@@ -315,6 +388,10 @@ function Code:save()
   self:markSaved()
 end
 
+---TODO
+---@param event string
+---@param ... any
+---@return boolean?
 function Code:processEvent(event, ...)
   local handler = on[event]
   if handler then

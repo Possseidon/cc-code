@@ -1,6 +1,17 @@
 local lexLua = require "code.lexers.lexLua"
 local Highlighter = require "code.Highlighter"
 
+---@class Point
+---@field x integer
+---@field y integer
+
+---TODO
+---@param from table
+---@param fromStart integer
+---@param fromEnd integer
+---@param toStart integer
+---@param to table?
+---@return table
 local function moveTable(from, fromStart, fromEnd, toStart, to)
   to = to or from
   if from ~= to or fromStart ~= toStart then
@@ -19,19 +30,19 @@ end
 
 ---Splits the given string on linebreaks.
 ---Returns an empty table when passed nil.
----@param content string?
+---@param text string?
 ---@return string[]
-local function splitLines(content)
-  if not content then return {} end
+local function splitLines(text)
+  if not text then return {} end
   local lines = {}
   local pos = 1
   while true do
-    local nextLineBreak = content:find("\n", pos, true)
+    local nextLineBreak = text:find("\n", pos, true)
     if nextLineBreak then
-      table.insert(lines, content:sub(pos, nextLineBreak - 1))
+      table.insert(lines, text:sub(pos, nextLineBreak - 1))
       pos = nextLineBreak + 1
     else
-      table.insert(lines, content:sub(pos))
+      table.insert(lines, text:sub(pos))
       break
     end
   end
@@ -132,9 +143,16 @@ function Editor:record(execute, revert)
   self:redo()
 end
 
-local function makeModifier(from, to, content, cursorX, cursorY)
+---TODO
+---@param from integer
+---@param to integer
+---@param text string?
+---@param cursorX integer
+---@param cursorY integer
+---@return fun(editor: Editor)
+local function makeModifier(from, to, text, cursorX, cursorY)
   return function(editor)
-    local lines = splitLines(content)
+    local lines = splitLines(text)
     local delta = #lines - (to - from + 1)
     moveTable(editor._lines.text, to + 1, #editor._lines.text, to + 1 + delta)
     for i = #editor._lines.text + delta + 1, #editor._lines.text do
@@ -148,21 +166,38 @@ local function makeModifier(from, to, content, cursorX, cursorY)
   end
 end
 
-function Editor:replaceLines(from, to, content, cursorX, cursorY)
-  local delta = #splitLines(content) - (to - from + 1)
+---TODO
+---@param from integer
+---@param to integer
+---@param text string?
+---@param cursorX integer
+---@param cursorY integer
+function Editor:replaceLines(from, to, text, cursorX, cursorY)
+  local delta = #splitLines(text) - (to - from + 1)
   self:record(
-    makeModifier(from, to, content, cursorX, cursorY),
+    makeModifier(from, to, text, cursorX, cursorY),
     makeModifier(from, to + delta, mergeLines(self._lines.text, from, to), self:getCursor()))
 end
 
-function Editor:modifyLine(line, content, cursorX, cursorY)
-  self:replaceLines(line, line, content, cursorX, cursorY)
+---TODO
+---@param line integer
+---@param text string?
+---@param cursorX integer
+---@param cursorY integer
+function Editor:modifyLine(line, text, cursorX, cursorY)
+  self:replaceLines(line, line, text, cursorX, cursorY)
 end
 
+---TODO
+---@param line integer
+---@param cursorX integer
+---@param cursorY integer
 function Editor:removeLine(line, cursorX, cursorY)
   self:replaceLines(line, line, nil, cursorX, cursorY)
 end
 
+---TODO
+---@param text string?
 function Editor:insert(text)
   local lines = splitLines(text)
   local x, y = self:getCursor()
@@ -176,12 +211,18 @@ function Editor:insert(text)
   end
 end
 
+---TODO
+---@param from integer
+---@param to integer
 function Editor:remove(from, to)
   local _x, y = self:getCursor()
   local line = self._lines.text[y]
   self:modifyLine(y, line:sub(1, from - 1) .. line:sub(to + 1), from, y)
 end
 
+---TODO
+---@param left integer
+---@param right integer
 function Editor:removeRelative(left, right)
   local x, y = self:getCursor()
   local line = self._lines.text[y]
@@ -193,6 +234,7 @@ function Editor:removeRelative(left, right)
   end
 end
 
+---TODO
 function Editor:backspace()
   -- TODO: Check for selection
   local x, y = self:getCursor()
@@ -203,6 +245,7 @@ function Editor:backspace()
   end
 end
 
+---TODO
 function Editor:delete()
   -- TODO: Check for selection
   local x, y = self:getCursor()
@@ -213,6 +256,9 @@ function Editor:delete()
   end
 end
 
+---TODO
+---@param x integer
+---@param y integer
 function Editor:scrollTo(x, y)
   local oldX, oldY = self._scroll.x, self._scroll.y
   self._scroll.x = math.max(0, x)
@@ -223,18 +269,30 @@ function Editor:scrollTo(x, y)
   end
 end
 
+---TODO
+---@param dx integer
+---@param dy integer
 function Editor:scrollBy(dx, dy)
   self:scrollTo(self._scroll.x + dx, self._scroll.y + dy)
 end
 
+---TODO
+---@param x integer
+---@param y integer
+---@return integer x, integer y
 function Editor:screenToClient(x, y)
   return x + self._scroll.x - self._lineNumberWidth, y + self._scroll.y
 end
 
+---TODO
+---@param x integer
+---@param y integer
+---@return integer x, integer y
 function Editor:clientToScreen(x, y)
   return x - self._scroll.x + self._lineNumberWidth, y - self._scroll.y
 end
 
+---TODO
 function Editor:makeCursorVisible()
   local width, height = term.getSize()
   self:scrollTo(
@@ -244,6 +302,10 @@ function Editor:makeCursorVisible()
       self._cursor.y - height + self._visibleLines.below))
 end
 
+---TODO
+---@param x integer?
+---@param y integer?
+---@param select boolean?
 function Editor:setCursor(x, y, select)
   self._selectionStart = select and (self._selectionStart or { x = self._cursor.x, y = self._cursor.y }) or nil
   self._cursor.x = math.max(1, x or self._cursor.x)
@@ -255,25 +317,39 @@ function Editor:setCursor(x, y, select)
   end
 end
 
+---TODO
+---@param dx integer
+---@param dy integer
+---@param select boolean?
 function Editor:moveCursor(dx, dy, select)
   self:setCursor(self._cursor.x + dx, self._cursor.y + dy, select)
   self:makeCursorVisible()
 end
 
+---TODO
+---@param x integer
+---@param y integer
 function Editor:click(x, y)
   self:setCursor(self:screenToClient(x, y))
   self._mouseDown = true
 end
 
+---TODO
+---@param x integer
+---@param y integer
 function Editor:drag(x, y)
   x, y = self:screenToClient(x, y)
   self:setCursor(x, y, true)
 end
 
+---TODO
 function Editor:release()
   self._mouseDown = false
 end
 
+---TODO
+---@param start Point
+---@param stop Point
 function Editor:select(start, stop)
   if start.y > stop.y or start.y == stop.y and start.x > stop.x then
     start, stop = stop, start
@@ -284,19 +360,27 @@ function Editor:select(start, stop)
   }
 end
 
+---TODO
 function Editor:clearHistory()
   self._history = {}
   self._revision = 0
 end
 
+---TODO
+---@param content string?
 function Editor:setContent(content)
   self:replaceLines(1, #self._lines.text, content, 1, 1)
 end
 
+---TODO
+---@return string?
 function Editor:getContent()
   return mergeLines(self._lines.text)
 end
 
+---TODO
+---@param line integer
+---@return string text, string color, string background
 function Editor:getLineHighlighting(line)
   local lines = self._lines
   local highlighter = self._highlighter
@@ -351,6 +435,9 @@ function Editor:getLineHighlighting(line)
   return text, color, background
 end
 
+---TODO
+---@param line integer
+---@return string text, string color, string background
 function Editor:getBlitLine(line)
   local width, _height = term.getSize()
   local scroll = self._scroll.x
@@ -384,6 +471,7 @@ function Editor:getBlitLine(line)
       makeBlit(background, colors.toBlit(colors.black), colors.toBlit(colors.gray))
 end
 
+---TODO
 function Editor:render()
   term.setCursorBlink(false)
 
@@ -400,12 +488,15 @@ function Editor:render()
   end
 end
 
+---TODO
+---@return boolean
 function Editor:isCursorVisible()
   local x, y = self:clientToScreen(self:getCursor())
   local width, height = term.getSize()
   return x >= 1 and x <= width and y >= 1 and y <= height
 end
 
+---TODO
 function Editor:blink()
   if self:isCursorVisible() then
     term.setCursorPos(self:clientToScreen(self:getCursor()))
@@ -415,28 +506,36 @@ function Editor:blink()
   end
 end
 
+---TODO
+---@param width integer
 function Editor:setLineNumberWidth(width)
   self._lineNumberWidth = width
 end
 
-function Editor:cursorPreviousLine(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorPreviousLine(select)
   local _x, y = self:getCursor()
   if y > 1 then
-    self:setCursor(#self._lines.text[y - 1] + 1, y - 1, shift)
+    self:setCursor(#self._lines.text[y - 1] + 1, y - 1, select)
     self:makeCursorVisible()
   end
 end
 
-function Editor:cursorLeft(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorLeft(select)
   local x, y = self:getCursor()
   if x > 1 then
-    self:setCursor(x - 1, nil, shift)
+    self:setCursor(x - 1, nil, select)
     self:makeCursorVisible()
   else
-    self:cursorPreviousLine(shift)
+    self:cursorPreviousLine(select)
   end
 end
 
+---TODO
+---@return integer?
 function Editor:findWordLeft()
   local x, y = self:getCursor()
   if x == 1 then
@@ -449,26 +548,34 @@ function Editor:findWordLeft()
   return x
 end
 
-function Editor:cursorWordLeft(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorWordLeft(select)
   local x = self:findWordLeft()
   if x then
-    self:setCursor(x, nil, shift)
+    self:setCursor(x, nil, select)
     self:makeCursorVisible()
   else
-    self:cursorLeft(shift)
+    self:cursorLeft(select)
   end
 end
 
-function Editor:cursorRight(shift)
-  self:moveCursor(1, 0, shift)
+---TODO
+---@param select boolean?
+function Editor:cursorRight(select)
+  self:moveCursor(1, 0, select)
 end
 
-function Editor:cursorNextLine(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorNextLine(select)
   local _x, y = self:getCursor()
-  self:setCursor(1, y + 1, shift)
+  self:setCursor(1, y + 1, select)
   self:makeCursorVisible()
 end
 
+---TODO
+---@return integer?
 function Editor:findWordRight()
   local x, y = self:getCursor()
   local line = self._lines.text[y]
@@ -478,37 +585,49 @@ function Editor:findWordRight()
   return line:find("%f[%w_]", x + 1) or #line + 1
 end
 
-function Editor:cursorWordRight(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorWordRight(select)
   local x = self:findWordRight()
   if x then
-    self:setCursor(x, nil, shift)
+    self:setCursor(x, nil, select)
     self:makeCursorVisible()
   else
-    self:cursorNextLine(shift)
+    self:cursorNextLine(select)
   end
 end
 
-function Editor:cursorLineHome(shift)
-  self:setCursor(1, self._cursor.y, shift)
+---TODO
+---@param select boolean?
+function Editor:cursorLineHome(select)
+  self:setCursor(1, self._cursor.y, select)
   self:makeCursorVisible()
 end
 
-function Editor:cursorDocumentHome(shift)
-  self:setCursor(1, 1, shift)
+---TODO
+---@param select boolean?
+function Editor:cursorDocumentHome(select)
+  self:setCursor(1, 1, select)
   self:makeCursorVisible()
 end
 
-function Editor:cursorLineEnd(shift)
-  self:setCursor(#self._lines.text[self._cursor.y] + 1, self._cursor.y, shift)
+---TODO
+---@param select boolean?
+function Editor:cursorLineEnd(select)
+  self:setCursor(#self._lines.text[self._cursor.y] + 1, self._cursor.y, select)
   self:makeCursorVisible()
 end
 
-function Editor:cursorDocumentEnd(shift)
+---TODO
+---@param select boolean?
+function Editor:cursorDocumentEnd(select)
   local y = #self._lines.text
-  self:setCursor(#self._lines.text[y] + 1, y, shift)
+  self:setCursor(#self._lines.text[y] + 1, y, select)
   self:makeCursorVisible()
 end
 
+---TODO
+---@param fromEndOfLine boolean?
 function Editor:enter(fromEndOfLine)
   if fromEndOfLine then
     self:cursorLineEnd()
@@ -516,6 +635,8 @@ function Editor:enter(fromEndOfLine)
   self:insert("\n")
 end
 
+---TODO
+---@param shift boolean?
 function Editor:tab(shift)
   local x, y = self:getCursor()
   if shift then
@@ -527,16 +648,21 @@ function Editor:tab(shift)
   end
 end
 
+---TODO
+---@param select boolean?
 function Editor:cursorPageUp(select)
   local _width, height = term.getSize()
   self:moveCursor(0, 2 - height, select)
 end
 
+---TODO
+---@param select boolean?
 function Editor:cursorPageDown(select)
   local _width, height = term.getSize()
   self:moveCursor(0, height - 2, select)
 end
 
+---TODO
 function Editor:backspaceWord()
   local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordLeft()
@@ -547,6 +673,7 @@ function Editor:backspaceWord()
   end
 end
 
+---TODO
 function Editor:deleteWord()
   local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordRight()
@@ -557,27 +684,34 @@ function Editor:deleteWord()
   end
 end
 
+---TODO
 function Editor:cut()
   -- TODO
 end
 
+---TODO
 function Editor:copy()
   -- TODO
 end
 
+---TODO
 function Editor:paste()
   -- TODO
 end
 
+---TODO
+---@return integer
 function Editor:revision()
   return self._revision
 end
 
+---TODO
 function Editor:selectAll()
   self:cursorDocumentHome()
   self:cursorDocumentEnd(true)
 end
 
+---TODO
 function Editor:swapLineUp()
   -- TODO: Swap all selected lines
   local x, y = self:getCursor()
@@ -586,6 +720,7 @@ function Editor:swapLineUp()
   end
 end
 
+---TODO
 function Editor:swapLineDown()
   -- TODO: Swap all selected lines
   local x, y = self:getCursor()
