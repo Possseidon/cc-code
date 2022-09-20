@@ -21,6 +21,7 @@ local githubPossseidon = "https://raw.githubusercontent.com/Possseidon/"
 addRequests(githubPossseidon .. "cc-code/main", "", {
   "code/highlighter/vscode.lua",
   "code/class.lua",
+  "code/clipboard.lua",
   "code/Code.lua",
   "code/Editor.lua",
   "code/Highlighter.lua",
