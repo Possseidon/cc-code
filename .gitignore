@@ -3,4 +3,6 @@
 !.gitignore
 !.vscode
 
+startup.lua
+
 /code/lexers/
