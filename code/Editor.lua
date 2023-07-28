@@ -1,4 +1,5 @@
 local lexLua = require "code.lexers.lexLua"
+local clipboard = require "code.clipboard"
 local Highlighter = require "code.Highlighter"
 
 ---@class Point
@@ -686,17 +687,29 @@ end
 
 ---TODO
 function Editor:cut()
-  -- TODO
+  self:copy()
 end
 
 ---TODO
 function Editor:copy()
-  -- TODO
+  local selectedText = self:selectedText()
+  if selectedText then
+    clipboard.set(selectedText, false)
+  else
+    -- local x, y =
+    -- clipboard.set(self:(), true)
+  end
 end
 
 ---TODO
 function Editor:paste()
-  -- TODO
+  local text, fullLine = clipboard.get()
+  if fullLine then
+    local x, y = self:getCursor()
+    self:replaceLines(y, y - 1, text, x, y) -- TODO: Where to put cursor? Same x next line?
+  else
+    self:insert(text)
+  end
 end
 
 ---TODO
