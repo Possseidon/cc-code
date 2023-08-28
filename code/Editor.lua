@@ -5,14 +5,7 @@ local Highlighter = require "code.Highlighter"
 ---@field x integer
 ---@field y integer
 
----TODO
----@param from table
----@param fromStart integer
----@param fromEnd integer
----@param toStart integer
----@param to table?
----@return table
-local function moveTable(from, fromStart, fromEnd, toStart, to)
+table.move = table.move or function(from, fromStart, fromEnd, toStart, to)
   to = to or from
   if from ~= to or fromStart ~= toStart then
     if fromStart < toStart then
@@ -29,7 +22,9 @@ local function moveTable(from, fromStart, fromEnd, toStart, to)
 end
 
 ---Splits the given string on linebreaks.
+---
 ---Returns an empty table when passed nil.
+---
 ---@param text string?
 ---@return string[]
 local function splitLines(text)
@@ -50,7 +45,9 @@ local function splitLines(text)
 end
 
 ---Merges the given table of lines into a single string with linebreaks.
+---
 ---Similar to splitLines, an empty table returns nil.
+---
 ---@param lines string[]
 ---@param from integer?
 ---@param to integer?
@@ -64,8 +61,6 @@ end
 ---@class Editor
 local Editor = {}
 
----@type fun(): Editor
-local new = require "code.class" (Editor)
 function Editor:new()
   self._lines = {
     text = { "" },
@@ -76,15 +71,21 @@ function Editor:new()
       background = {},
     },
   }
-  self._visibleLines = { above = 3, below = 1 }
+
   self._selection = nil
   self._selectionStart = nil
   self._mouseDown = false
   self._cursor = { x = 1, y = 1 }
   self._scroll = { x = 0, y = 0 }
-  self._highlighter = Highlighter(require "code.highlighter.vscode")
   self._history = {}
   self._revision = 0
+
+  -- TODO: make dynamic
+  self._highlighter = Highlighter(require "code.highlighter.vscode")
+  -- TODO: optional/configurable lexer
+
+  -- TODO: move to config
+  self._visibleLines = { above = 3, below = 1 }
   self._lineNumberWidth = 3
   self._tabWidth = 2
 end
@@ -123,7 +124,7 @@ function Editor:canRedo()
   return self._revision < #self._history
 end
 
----Plays back a single step of the undo history.
+---Plays back a single step of the undo history if possible.
 function Editor:redo()
   if self:canRedo() then
     self._revision = self._revision + 1
@@ -132,7 +133,9 @@ function Editor:redo()
 end
 
 ---Records and immediately executes an undoable action.
+---
 ---Also clears any history that would cause a fork.
+---
 ---@param execute fun(editor: Editor)
 ---@param revert fun(editor: Editor)
 function Editor:record(execute, revert)
@@ -143,22 +146,25 @@ function Editor:record(execute, revert)
   self:redo()
 end
 
----TODO
----@param from integer
----@param to integer
----@param text string?
----@param cursorX integer
----@param cursorY integer
----@return fun(editor: Editor)
+---Creates a new function that replaces a range of lines.
+---
+---Meant to be used as parameter to `Editor:record()`.
+---
+---@param from integer The starting line index to modify.
+---@param to integer The ending line index to modify.
+---@param text string? The new text to insert.
+---@param cursorX integer The X-coordinate of the cursor position after the modification.
+---@param cursorY integer The Y-coordinate of the cursor position after the modification.
+---@return fun(editor: Editor) modifier A function that modifies the editor's text and cursor position.
 local function makeModifier(from, to, text, cursorX, cursorY)
   return function(editor)
     local lines = splitLines(text)
     local delta = #lines - (to - from + 1)
-    moveTable(editor._lines.text, to + 1, #editor._lines.text, to + 1 + delta)
+    table.move(editor._lines.text, to + 1, #editor._lines.text, to + 1 + delta)
     for i = #editor._lines.text + delta + 1, #editor._lines.text do
       editor._lines.text[i] = nil
     end
-    moveTable(lines, 1, #lines, from, editor._lines.text)
+    table.move(lines, 1, #lines, from, editor._lines.text)
 
     editor:invalidateLine(from)
     editor:setCursor(cursorX, cursorY)
@@ -166,12 +172,13 @@ local function makeModifier(from, to, text, cursorX, cursorY)
   end
 end
 
----TODO
----@param from integer
----@param to integer
----@param text string?
----@param cursorX integer
----@param cursorY integer
+
+---Undoably replaces the given range of lines with the given text.
+---@param from integer The starting line index to modify.
+---@param to integer The ending line index to modify.
+---@param text string? The text to replace the lines with.
+---@param cursorX integer The X-coordinate of the cursor position after the modification.
+---@param cursorY integer The Y-coordinate of the cursor position after the modification.
 function Editor:replaceLines(from, to, text, cursorX, cursorY)
   local delta = #splitLines(text) - (to - from + 1)
   self:record(
@@ -179,7 +186,7 @@ function Editor:replaceLines(from, to, text, cursorX, cursorY)
     makeModifier(from, to + delta, mergeLines(self._lines.text, from, to), self:getCursor()))
 end
 
----TODO
+---Undoably replaces a single line with the given text.
 ---@param line integer
 ---@param text string?
 ---@param cursorX integer
@@ -188,7 +195,10 @@ function Editor:modifyLine(line, text, cursorX, cursorY)
   self:replaceLines(line, line, text, cursorX, cursorY)
 end
 
----TODO
+---Undoable removes the given line.
+---
+---This is just a shorthand for passing `nil` as text for `Editor:modifyLine()`.
+---
 ---@param line integer
 ---@param cursorX integer
 ---@param cursorY integer
@@ -196,7 +206,7 @@ function Editor:removeLine(line, cursorX, cursorY)
   self:replaceLines(line, line, nil, cursorX, cursorY)
 end
 
----TODO
+---Inserts the given text at the current cursor position.
 ---@param text string?
 function Editor:insert(text)
   local lines = splitLines(text)
@@ -211,7 +221,7 @@ function Editor:insert(text)
   end
 end
 
----TODO
+---Removes the given range of characters in the current line and moves the cursor to where the text was deleted.
 ---@param from integer
 ---@param to integer
 function Editor:remove(from, to)
@@ -220,7 +230,10 @@ function Editor:remove(from, to)
   self:modifyLine(y, line:sub(1, from - 1) .. line:sub(to + 1), from, y)
 end
 
----TODO
+---Removes a range of characters relative to the current cursor.
+---
+---Properly deals with the cursor being past the end of the line.
+---
 ---@param left integer
 ---@param right integer
 function Editor:removeRelative(left, right)
@@ -234,9 +247,12 @@ function Editor:removeRelative(left, right)
   end
 end
 
----TODO
+---Does what one would expect from hitting backspace in an editor.
+---
+---In other words, deletes the character before the cursor and moves the cursor to the left.
+---Also joins lines if the cursor is on the first character of the line.
 function Editor:backspace()
-  -- TODO: Check for selection
+  -- TODO: check for selection
   local x, y = self:getCursor()
   if x ~= 1 then
     self:removeRelative(-1, -1)
@@ -245,9 +261,12 @@ function Editor:backspace()
   end
 end
 
----TODO
+---Does what one would expect from hitting delete in an editor.
+---
+---In other words, deletes the character after the cursor without moving the cursor.
+---Also joins lines if the cursor is past the end of the line.
 function Editor:delete()
-  -- TODO: Check for selection
+  -- TODO: check for selection
   local x, y = self:getCursor()
   if x <= #self._lines.text[y] then
     self:removeRelative(0, 0)
@@ -256,7 +275,7 @@ function Editor:delete()
   end
 end
 
----TODO
+---Scrolls just enough to make the given position visible.
 ---@param x integer
 ---@param y integer
 function Editor:scrollTo(x, y)
@@ -269,14 +288,18 @@ function Editor:scrollTo(x, y)
   end
 end
 
----TODO
+---Scrolls by the given amount.
 ---@param dx integer
 ---@param dy integer
 function Editor:scrollBy(dx, dy)
   self:scrollTo(self._scroll.x + dx, self._scroll.y + dy)
 end
 
----TODO
+---Transforms screen coordinates to client coordinates.
+---
+---Screen coordinates are relative to the top-left corner of the screen.
+---Client coordinates are relative to the beginning of the first line.
+---
 ---@param x integer
 ---@param y integer
 ---@return integer x, integer y
@@ -284,7 +307,8 @@ function Editor:screenToClient(x, y)
   return x + self._scroll.x - self._lineNumberWidth, y + self._scroll.y
 end
 
----TODO
+---Transforms client coordinates to screen coordinates.
+---@see Editor.screenToClient
 ---@param x integer
 ---@param y integer
 ---@return integer x, integer y
@@ -292,7 +316,9 @@ function Editor:clientToScreen(x, y)
   return x - self._scroll.x + self._lineNumberWidth, y - self._scroll.y
 end
 
----TODO
+---Makes sure the cursor is visible by scrolling just enough.
+---
+---This also takes _visibleLines into account to make sure at least that many lines remain visible.
 function Editor:makeCursorVisible()
   local width, height = term.getSize()
   self:scrollTo(
@@ -302,7 +328,7 @@ function Editor:makeCursorVisible()
       self._cursor.y - height + self._visibleLines.below))
 end
 
----TODO
+---Moves the cursor to the given position, possibly dragging along a selection.
 ---@param x integer?
 ---@param y integer?
 ---@param select boolean?
@@ -317,7 +343,7 @@ function Editor:setCursor(x, y, select)
   end
 end
 
----TODO
+---Moves the cursor by the given amount, possibly dragging along a selection.
 ---@param dx integer
 ---@param dy integer
 ---@param select boolean?
@@ -326,7 +352,7 @@ function Editor:moveCursor(dx, dy, select)
   self:makeCursorVisible()
 end
 
----TODO
+---Moves the cursor to the given position and remembers that the mouse is currently pressed down.
 ---@param x integer
 ---@param y integer
 function Editor:click(x, y)
@@ -334,7 +360,7 @@ function Editor:click(x, y)
   self._mouseDown = true
 end
 
----TODO
+---Drags the cursor to the given position, selecting the dragged region.
 ---@param x integer
 ---@param y integer
 function Editor:drag(x, y)
@@ -342,12 +368,15 @@ function Editor:drag(x, y)
   self:setCursor(x, y, true)
 end
 
----TODO
+---Notifies the editor that a mouse button was released, signifying the end of a drag/selection.
 function Editor:release()
   self._mouseDown = false
 end
 
----TODO
+---Selects everything in the given range.
+---
+---`start` does not have to be before `stop`, they will be swapped if necessary.
+---
 ---@param start Point
 ---@param stop Point
 function Editor:select(start, stop)
@@ -360,25 +389,29 @@ function Editor:select(start, stop)
   }
 end
 
----TODO
+---Clears the entire history, but leaves the document fully intact.
 function Editor:clearHistory()
   self._history = {}
   self._revision = 0
 end
 
----TODO
+---Replaces the entire document with the given text.
 ---@param content string?
 function Editor:setContent(content)
   self:replaceLines(1, #self._lines.text, content, 1, 1)
 end
 
----TODO
+---Returns the content of the editor.
 ---@return string?
 function Editor:getContent()
   return mergeLines(self._lines.text)
 end
 
----TODO
+---Retrieves the text, color, and background attributes for a given line in the editor.
+---
+---If the line has not been highlighted yet, it performs the highlighting process.
+---If there is a selection on the line, it applies the selection color to the background.
+---
 ---@param line integer
 ---@return string text, string color, string background
 function Editor:getLineHighlighting(line)
@@ -435,7 +468,7 @@ function Editor:getLineHighlighting(line)
   return text, color, background
 end
 
----TODO
+---Returns the parameters to `term.blit` for the given line.
 ---@param line integer
 ---@return string text, string color, string background
 function Editor:getBlitLine(line)
@@ -445,12 +478,12 @@ function Editor:getBlitLine(line)
   local function makeBlit(text, fill, lineNumberFill)
     if scroll < 0 then -- left pad
       text = fill:rep(-scroll) .. text
-    else -- left cutoff
+    else               -- left cutoff
       text = text:sub(1 + scroll)
     end
     if #text < width then -- right pad
       text = text .. fill:rep(width - #text)
-    else -- right cutoff
+    else                  -- right cutoff
       text = text:sub(1, width)
     end
 
@@ -471,7 +504,10 @@ function Editor:getBlitLine(line)
       makeBlit(background, colors.toBlit(colors.black), colors.toBlit(colors.gray))
 end
 
----TODO
+---Renders all currently visible lines.
+---
+---Also temporarly hides the cursor to avoid it from jumping around.
+---The cursor is then updated appropriately (hidden if not on screen).
 function Editor:render()
   term.setCursorBlink(false)
 
@@ -486,18 +522,7 @@ function Editor:render()
       term.clearLine()
     end
   end
-end
 
----TODO
----@return boolean
-function Editor:isCursorVisible()
-  local x, y = self:clientToScreen(self:getCursor())
-  local width, height = term.getSize()
-  return x >= 1 and x <= width and y >= 1 and y <= height
-end
-
----TODO
-function Editor:blink()
   if self:isCursorVisible() then
     term.setCursorPos(self:clientToScreen(self:getCursor()))
     term.setCursorBlink(true)
@@ -506,13 +531,15 @@ function Editor:blink()
   end
 end
 
----TODO
----@param width integer
-function Editor:setLineNumberWidth(width)
-  self._lineNumberWidth = width
+---Whether the cursor is currently visible.
+---@return boolean
+function Editor:isCursorVisible()
+  local x, y = self:clientToScreen(self:getCursor())
+  local width, height = term.getSize()
+  return x >= 1 and x <= width and y >= 1 and y <= height
 end
 
----TODO
+---Moves the cursor to the previous line, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorPreviousLine(select)
   local _x, y = self:getCursor()
@@ -522,7 +549,7 @@ function Editor:cursorPreviousLine(select)
   end
 end
 
----TODO
+---Moves the cursor one character to the left, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorLeft(select)
   local x, y = self:getCursor()
@@ -534,7 +561,7 @@ function Editor:cursorLeft(select)
   end
 end
 
----TODO
+---Returns the index of the first character of the word to the left of the cursor.
 ---@return integer?
 function Editor:findWordLeft()
   local x, y = self:getCursor()
@@ -548,7 +575,7 @@ function Editor:findWordLeft()
   return x
 end
 
----TODO
+---Moves the cursor to the beginning of the word to the left of the cursor, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorWordLeft(select)
   local x = self:findWordLeft()
@@ -560,13 +587,13 @@ function Editor:cursorWordLeft(select)
   end
 end
 
----TODO
+---Moves the cursor one character to the right, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorRight(select)
   self:moveCursor(1, 0, select)
 end
 
----TODO
+---Moves the cursor to the next line, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorNextLine(select)
   local _x, y = self:getCursor()
@@ -574,7 +601,7 @@ function Editor:cursorNextLine(select)
   self:makeCursorVisible()
 end
 
----TODO
+---Finds the index of the first character of the word to the right of the cursor.
 ---@return integer?
 function Editor:findWordRight()
   local x, y = self:getCursor()
@@ -585,7 +612,7 @@ function Editor:findWordRight()
   return line:find("%f[%w_]", x + 1) or #line + 1
 end
 
----TODO
+---Moves the cursor to the beginning of the word to the right of the cursor, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorWordRight(select)
   local x = self:findWordRight()
@@ -597,28 +624,28 @@ function Editor:cursorWordRight(select)
   end
 end
 
----TODO
+---Moves the cursor to the beginning of the line, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorLineHome(select)
   self:setCursor(1, self._cursor.y, select)
   self:makeCursorVisible()
 end
 
----TODO
+---Moves the cursor to the beginning of the document, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorDocumentHome(select)
   self:setCursor(1, 1, select)
   self:makeCursorVisible()
 end
 
----TODO
+---Moves the cursor to the end of the line, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorLineEnd(select)
   self:setCursor(#self._lines.text[self._cursor.y] + 1, self._cursor.y, select)
   self:makeCursorVisible()
 end
 
----TODO
+---Moves the cursor to the end of the document, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorDocumentEnd(select)
   local y = #self._lines.text
@@ -626,7 +653,7 @@ function Editor:cursorDocumentEnd(select)
   self:makeCursorVisible()
 end
 
----TODO
+---Inserts a newline, optionally forced at the end of the line.
 ---@param fromEndOfLine boolean?
 function Editor:enter(fromEndOfLine)
   if fromEndOfLine then
@@ -635,9 +662,10 @@ function Editor:enter(fromEndOfLine)
   self:insert("\n")
 end
 
----TODO
+---Inserts a tab or (un)indents the current selection.
 ---@param shift boolean?
 function Editor:tab(shift)
+  -- TODO: indent entire selection
   local x, y = self:getCursor()
   if shift then
     local original = self._lines.text[y]
@@ -648,21 +676,21 @@ function Editor:tab(shift)
   end
 end
 
----TODO
+---Moves the cursor a full page up, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorPageUp(select)
   local _width, height = term.getSize()
   self:moveCursor(0, 2 - height, select)
 end
 
----TODO
+---Moves the cursor a full page down, possibly dragging along a selection.
 ---@param select boolean?
 function Editor:cursorPageDown(select)
   local _width, height = term.getSize()
   self:moveCursor(0, height - 2, select)
 end
 
----TODO
+---Deletes everything until the start of the previous word.
 function Editor:backspaceWord()
   local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordLeft()
@@ -673,7 +701,7 @@ function Editor:backspaceWord()
   end
 end
 
----TODO
+---Deletes everything until the start of the next word.
 function Editor:deleteWord()
   local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordRight()
@@ -684,49 +712,52 @@ function Editor:deleteWord()
   end
 end
 
----TODO
+---Deletes the current line or selection and stores it in the clipboard.
 function Editor:cut()
-  -- TODO
+  -- TODO: implement
 end
 
----TODO
+---Stores the current line or selection in the clipboard.
 function Editor:copy()
-  -- TODO
+  -- TODO: implement
 end
 
----TODO
+---Pastes the contents of the clipboard at the current cursor.
 function Editor:paste()
-  -- TODO
+  -- TODO: implement
+  -- TODO: make sure to handle selection
 end
 
----TODO
+---The current revision used by the undo history.
 ---@return integer
 function Editor:revision()
   return self._revision
 end
 
----TODO
+---Selects the entire document.
 function Editor:selectAll()
   self:cursorDocumentHome()
   self:cursorDocumentEnd(true)
 end
 
----TODO
+---Swaps the current/selected lines with the line above.
 function Editor:swapLineUp()
-  -- TODO: Swap all selected lines
+  -- TODO: swap all selected lines
   local x, y = self:getCursor()
   if y > 1 then
     self:replaceLines(y - 1, y, self._lines.text[y] .. "\n" .. self._lines.text[y - 1], x, y - 1)
   end
 end
 
----TODO
+---Swaps the current/selected lines with the line below.
 function Editor:swapLineDown()
-  -- TODO: Swap all selected lines
+  -- TODO: swap all selected lines
   local x, y = self:getCursor()
   if y < #self._lines.text then
     self:replaceLines(y, y + 1, self._lines.text[y + 1] .. "\n" .. self._lines.text[y], x, y + 1)
   end
 end
 
+---@type fun(): Editor
+local new = require "code.class" (Editor)
 return new
