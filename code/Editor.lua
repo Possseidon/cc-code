@@ -87,6 +87,8 @@ function Editor:new()
   self._revision = 0
   self._lineNumberWidth = 3
   self._tabWidth = 2
+  self._checkSyntax = require "code.syntaxChecker.checkLua"
+  self._syntaxErrors = nil
 end
 
 ---Invalidates the given line, and in turn everything after as well.
@@ -163,6 +165,21 @@ local function makeModifier(from, to, text, cursorX, cursorY)
     editor:invalidateLine(from)
     editor:setCursor(cursorX, cursorY)
     editor:makeCursorVisible()
+
+    -- TODO: This should only happen after n sec of inactivity
+    editor:checkSyntax()
+  end
+end
+
+function Editor:checkSyntax()
+  local content = self:getContent()
+  self._syntaxErrors = content and self._checkSyntax(content)
+  if not self._syntaxErrors then return end
+  for line = 1, #self._lines.text do
+    if self._syntaxErrors[line] then
+      self:invalidateLine(line)
+      break
+    end
   end
 end
 
@@ -475,16 +492,30 @@ end
 function Editor:render()
   term.setCursorBlink(false)
 
+  -- TODO: More pretty error message
+  -- TODO: Different severities
+  -- TODO: Cursor gets offset up if below syntax errors
+
   local _width, height = term.getSize()
-  for i = 1, height do
+  local i = 1
+  local offset = 0
+  while i + offset <= height do
+    term.setCursorPos(1, i + offset)
     local line = i + self._scroll.y
-    term.setCursorPos(1, i)
     if line >= 1 and line <= #self._lines.text then
       term.blit(self:getBlitLine(line))
+      local syntaxError = self._syntaxErrors and self._syntaxErrors[line]
+      if syntaxError and i + offset < height then
+        term.setCursorPos(1, i + offset + 1)
+        syntaxError = " ! " .. syntaxError
+        term.blit(syntaxError, colors.toBlit(colors.red):rep(#syntaxError), colors.toBlit(colors.black):rep(#syntaxError))
+        offset = offset + 1
+      end
     else
       term.setBackgroundColor(colors.gray)
       term.clearLine()
     end
+    i = i + 1
   end
 end
 
