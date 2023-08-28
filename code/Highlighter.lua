@@ -1,16 +1,11 @@
 ---@class Highlighter
 local Highlighter = {}
 
----@type fun(config: table<string, any>): Highlighter
-local new = require "code.class" (Highlighter)
-
----TODO
----@param config table<string, any>
 function Highlighter:new(config)
   self._config = config
 end
 
----TODO
+---Returns `term.blit` parameters for the given token.
 ---@param token string
 ---@param kind string
 ---@param subKind string
@@ -22,4 +17,6 @@ function Highlighter:highlight(token, kind, subKind)
   return token, colors.toBlit(color):rep(#token), colors.toBlit(background):rep(#token)
 end
 
+---@type fun(config: table<string, any>): Highlighter
+local new = require "code.class" (Highlighter)
 return new

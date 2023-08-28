@@ -2,23 +2,22 @@ local Editor = require "code.Editor"
 
 ---@alias Action fun()
 
----@type table<string, fun(code: Code, ...): ...>
+---Maps event names to event handlers.
+---@type table<string, fun(code: Code, ...): boolean?>
 local on = {}
 
----TODO
+---A char was typed and gets inserted at the current cursor position.
 ---@param code Code
 ---@param char string
----@return boolean?
 function on.char(code, char)
   code._editor:insert(char)
   return true
 end
 
----TODO
+---A key was pressed, triggering corresponding shortcut actions and updating internal modifier key state.
 ---@param code Code
 ---@param key integer
 ---@param _held boolean
----@return boolean?
 function on.key(code, key, _held)
   if key == keys.leftCtrl or key == keys.rightCtrl then
     code._modifierKeys.ctrl = true
@@ -60,10 +59,9 @@ function on.key(code, key, _held)
   end
 end
 
----TODO
+---A key was released, updating internal modifier key state.
 ---@param code Code
 ---@param key integer
----@return boolean?
 function on.key_up(code, key)
   if key == keys.leftCtrl or key == keys.rightCtrl then
     code._modifierKeys.ctrl = false
@@ -74,60 +72,54 @@ function on.key_up(code, key)
   end
 end
 
----TODO
+---The term was resized, requiring a redraw.
 ---@param _code Code
----@return boolean?
 function on.term_resize(_code)
   return true
 end
 
----TODO
+---A mouse button was clicked, moving the cursor to that position.
 ---@param code Code
----@param button integer
+---@param _button integer
 ---@param x integer
 ---@param y integer
----@return boolean?
-function on.mouse_click(code, button, x, y)
+function on.mouse_click(code, _button, x, y)
   code._editor:click(x, y)
   return true
 end
 
----TODO
+---The mouse is being dragged for selecting text.
 ---@param code Code
----@param button integer
+---@param _button integer
 ---@param x integer
 ---@param y integer
----@return boolean?
-function on.mouse_drag(code, button, x, y)
+function on.mouse_drag(code, _button, x, y)
   code._editor:drag(x, y)
   return true
 end
 
----TODO
+---Scrolls the editor.
 ---@param code Code
 ---@param direction integer
 ---@param _x integer
 ---@param _y integer
----@return boolean?
 function on.mouse_scroll(code, direction, _x, _y)
-  code._editor:scrollBy(0, direction * 3)
+  code._editor:scrollBy(0, direction * code._config.scrollAmount)
   return true
 end
 
----TODO
+---A mouse button was released.
 ---@param code Code
 ---@param _button integer
 ---@param _x integer
 ---@param _y integer
----@return boolean?
 function on.mouse_up(code, _button, _x, _y)
   code._editor:release()
 end
 
----TODO
+---Pastes text from the internal clipboard (or from the real clipboard if shift was held down).
 ---@param code Code
 ---@param text string
----@return boolean?
 function on.paste(code, text)
   if code._modifierKeys.shift then
     code._editor:insert(text)
@@ -140,8 +132,6 @@ end
 ---@class Code
 local Code = {}
 
----@type fun(filename: string): Code
-local new = require "code.class" (Code)
 function Code:new(filename)
   self._running = true
   self._filename = filename
@@ -169,20 +159,11 @@ end
 local configFilename = ".code"
 local defaultConfig = {
   swapYZ = false,
+  scrollAmount = 3,
   shortcuts = {},
 }
 
----TODO
----@param config table<string, any>
-local function cleanConfig(config)
-  for key, value in pairs(config) do
-    if value == defaultConfig[key] or defaultConfig[key] == nil then
-      config[key] = nil
-    end
-  end
-end
-
----TODO
+---Loads settings from the config file.
 function Code:loadConfig()
   local config
   if fs.exists(configFilename) then
@@ -197,17 +178,17 @@ function Code:loadConfig()
       os.pullEvent("key")
       config = {}
     end
-    cleanConfig(config)
   else
     config = {}
   end
   self._config = setmetatable(config, { __index = defaultConfig })
 end
 
----TODO
+---Saves settings to the config file.
 function Code:saveConfig()
   if self._invalidConfig then return end
-  cleanConfig(self._config)
+  local meta = getmetatable(self._config)
+  setmetatable(self._config, nil)
   if next(self._config) == nil then
     fs.delete(configFilename)
   else
@@ -216,9 +197,10 @@ function Code:saveConfig()
     file.write(content)
     file.close()
   end
+  setmetatable(self._config, meta)
 end
 
----TODO
+---Opens the given file for editing.
 ---@param filename string
 function Code:open(filename)
   if fs.exists(filename) then
@@ -230,7 +212,7 @@ function Code:open(filename)
   end
 end
 
----TODO
+---Updates the multishell title to the current filename, possibly with an `*` indicating modifications.
 function Code:updateMultishell()
   if multishell then
     local title = fs.getName(self._filename)
@@ -241,18 +223,18 @@ function Code:updateMultishell()
   end
 end
 
----TODO
+---Whether the editor matches the current file on disk.
 ---@return boolean
 function Code:saved()
   return self._editor:revision() == self._savedRevision
 end
 
----TODO
+---Marks the current state as saved, so that soft exiting won't trigger a warning.
 function Code:markSaved()
   self._savedRevision = self._editor:revision()
 end
 
----TODO
+---Registers all default shortcuts for general purpose editing.
 function Code:registerDefaultShortcuts()
   self:registerScript("shift?+left", "editor:cursorLeft(shift)")
   self:registerScript("ctrl+shift?+left", "editor:cursorWordLeft(shift)")
@@ -310,7 +292,7 @@ function Code:registerDefaultShortcuts()
   -- self:registerScript("ctrl+shift?+tab", "code:switchTab(shift)")
 end
 
----TODO
+---Switches to the next (or previous) multishell tab.
 ---@param back boolean?
 function Code:switchTab(back)
   if multishell then
@@ -320,14 +302,20 @@ function Code:switchTab(back)
   end
 end
 
----TODO
+---Registers shortcuts from the currently loaded config.
 function Code:registerConfigShortcuts()
   for combo, script in pairs(self._config.shortcuts) do
     self:registerScript(combo, script)
   end
 end
 
----TODO
+---Creates a new action from the given script containing Lua code.
+---
+---The script has a few globals set:
+--- - `code` for access to this current class
+--- - `editor` as shorthand for `code._editor`
+--- - `ctrl`, `shift` and `alt` to get modifier keys (as boolean)
+---
 ---@param script string
 ---@return Action
 function Code:createAction(script)
@@ -350,7 +338,10 @@ function Code:createAction(script)
   })))
 end
 
----TODO
+---Registers an action with a key combination.
+---
+---The combo has the format `ctrl?+shift+s` which allows using `ctrl` as a boolean in the action.
+---
 ---@param combo string
 ---@param action Action
 function Code:registerAction(combo, action)
@@ -363,23 +354,26 @@ function Code:registerAction(combo, action)
   end
 end
 
----TODO
+---Registers a Lua script to the given key combination.
+---
+---This is just a shorthand for calling both createAction and registerAction.
+---
 ---@param combo string
 ---@param script string
 function Code:registerScript(combo, script)
   self:registerAction(combo, self:createAction(script))
 end
 
----TODO
+---Exits, asking for confirmation on unsaved changes (unless `force` is set to true).
 ---@param force boolean?
 function Code:quit(force)
   if force or self:saved() then
     self._running = false
   end
-  -- TODO: Message for normal close without force.
+  -- TODO: message for normal close without force
 end
 
----TODO
+---Saves the current state to disk and also marks the current state as "saved" internally.
 function Code:save()
   local content = self._editor:getContent()
   local file = assert(fs.open(self._filename, "wb"))
@@ -388,7 +382,10 @@ function Code:save()
   self:markSaved()
 end
 
----TODO
+---Forwards an event with all its parameters to the `on` table of event handlers.
+---
+---Ignores events that aren't in the `on` table.
+---
 ---@param event string
 ---@param ... any
 ---@return boolean?
@@ -399,17 +396,13 @@ function Code:processEvent(event, ...)
   end
 end
 
-function Code:render()
-  self._editor:render()
-  self._editor:blink()
-end
-
+---Runs the application until the user exits.
 function Code:run()
-  self:render()
+  self._editor:render()
   while self._running do
     ---@diagnostic disable-next-line: undefined-field
     if self:processEvent(os.pullEvent()) then
-      self:render()
+      self._editor:render()
       self:updateMultishell()
     end
   end
@@ -418,4 +411,6 @@ function Code:run()
   end
 end
 
+---@type fun(filename: string): Code
+local new = require "code.class" (Code)
 return new
