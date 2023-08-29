@@ -725,21 +725,131 @@ function Editor:selectAll()
   self:cursorDocumentEnd(true)
 end
 
+---Returns a function that swaps the given line with the one below.
+---@param x integer
+---@param y integer
+---@param line integer
+---@return fun(editor: Editor)
+local function makeLineSwapper(x, y, line)
+  return function(editor)
+    local lines = editor._lines.text
+    lines[line], lines[line + 1] = lines[line + 1], lines[line]
+
+    editor:invalidateLine(line)
+    editor:setCursor(x, y)
+    editor:makeCursorVisible()
+  end
+end
+
+---Swaps the given range up by moving the line above `from` to `to`.
+---@param x integer
+---@param y integer
+---@param selectionStartX integer
+---@param selectionStartY integer
+---@param selectionStopX integer
+---@param selectionStopY integer
+---@param from integer
+---@param to integer
+---@return fun(editor: Editor)
+local function makeSelectionSwapperUp(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY, from, to)
+  return function(editor)
+    local lines = editor._lines.text
+    local swapLine = lines[from - 1]
+    table.move(lines, from, to, from - 1)
+    lines[to] = swapLine
+
+    editor:invalidateLine(from - 1)
+    editor._cursor.x = x
+    editor._cursor.y = y
+    editor._selection = {
+      start = { x = selectionStartX, y = selectionStartY },
+      stop = { x = selectionStopX, y = selectionStopY },
+    }
+    editor:makeCursorVisible()
+  end
+end
+
+---Swaps the given range down by moving the line below `to` to `from`.
+---@param x integer
+---@param y integer
+---@param selectionStartX integer
+---@param selectionStartY integer
+---@param selectionStopX integer
+---@param selectionStopY integer
+---@param from integer
+---@param to integer
+---@return fun(editor: Editor)
+local function makeSelectionSwapperDown(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY, from, to)
+  return function(editor)
+    local lines = editor._lines.text
+    local swapLine = lines[to + 1]
+    table.move(lines, from, to, from + 1)
+    lines[from] = swapLine
+
+    editor:invalidateLine(from)
+    editor._cursor.x = x
+    editor._cursor.y = y
+    editor._selection = {
+      start = { x = selectionStartX, y = selectionStartY },
+      stop = { x = selectionStopX, y = selectionStopY },
+    }
+    editor:makeCursorVisible()
+  end
+end
+
 ---Swaps the current/selected lines with the line above.
-function Editor:swapLineUp()
-  -- TODO: swap all selected lines
+function Editor:swapLinesUp()
   local x, y = self:getCursor()
-  if y > 1 then
-    self:replaceLines(y - 1, y, self._lines.text[y] .. "\n" .. self._lines.text[y - 1], x, y - 1)
+  local selection = self._selection
+  if selection then
+    if selection.start.y > 1 then
+      local to = selection.stop.y
+      if selection.stop.x == 1 then
+        to = to - 1
+      end
+      self:record(
+        makeSelectionSwapperUp(
+          x, y - 1,
+          selection.start.x, selection.start.y - 1,
+          selection.stop.x, selection.stop.y - 1,
+          selection.start.y, to),
+        makeSelectionSwapperDown(
+          x, y,
+          selection.start.x, selection.start.y,
+          selection.stop.x, selection.stop.y,
+          selection.start.y - 1, to - 1))
+    end
+  elseif y > 1 then
+    self:record(makeLineSwapper(x, y - 1, y - 1), makeLineSwapper(x, y, y - 1))
   end
 end
 
 ---Swaps the current/selected lines with the line below.
-function Editor:swapLineDown()
-  -- TODO: swap all selected lines
+function Editor:swapLinesDown()
   local x, y = self:getCursor()
-  if y < #self._lines.text then
-    self:replaceLines(y, y + 1, self._lines.text[y + 1] .. "\n" .. self._lines.text[y], x, y + 1)
+  local selection = self._selection
+  if selection then
+    if selection.stop.y < #self._lines.text then
+      local to = selection.stop.y
+      if selection.stop.x == 1 then
+        to = to - 1
+      end
+      self:record(
+        makeSelectionSwapperDown(
+          x, y + 1,
+          selection.start.x, selection.start.y + 1,
+          selection.stop.x, selection.stop.y + 1,
+          selection.start.y, to),
+        makeSelectionSwapperUp(
+          x, y,
+          selection.start.x, selection.start.y,
+          selection.stop.x, selection.stop.y,
+          selection.start.y + 1, to + 1))
+    end
+  else
+    if y < #self._lines.text then
+      self:record(makeLineSwapper(x, y + 1, y), makeLineSwapper(x, y, y))
+    end
   end
 end
 
