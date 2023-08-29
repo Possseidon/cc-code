@@ -1,25 +1,10 @@
-local lexLua = require "code.lexers.lexLua"
 local Highlighter = require "code.Highlighter"
+local lexLua      = require "code.lexers.lexLua"
+local table       = require "code.polyfill.table"
 
 ---@class Point
 ---@field x integer
 ---@field y integer
-
-table.move = table.move or function(from, fromStart, fromEnd, toStart, to)
-  to = to or from
-  if from ~= to or fromStart ~= toStart then
-    if fromStart < toStart then
-      for i = fromEnd, fromStart, -1 do
-        to[i - fromStart + toStart] = from[i]
-      end
-    else
-      for i = fromStart, fromEnd do
-        to[i - fromStart + toStart] = from[i]
-      end
-    end
-  end
-  return to
-end
 
 ---Splits the given string on linebreaks.
 ---
