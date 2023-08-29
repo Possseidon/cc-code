@@ -6,6 +6,22 @@ local table       = require "code.polyfill.table"
 ---@field x integer
 ---@field y integer
 
+---@alias SelectionAnchor
+---| "start"
+---| "stop"
+
+---@class Selection
+---@field start Point
+---@field stop Point
+---@field anchor SelectionAnchor
+
+---Returns the anchor point of a selection.
+---@param selection Selection
+---@return Point
+local function selectionAnchorPoint(selection)
+  return selection.anchor == "start" and selection.start or selection.stop
+end
+
 ---Splits the given string on linebreaks.
 ---
 ---Returns an empty table when passed nil.
@@ -58,7 +74,6 @@ function Editor:new()
   }
 
   self._selection = nil
-  self._selectionStart = nil
   self._mouseDown = false
   self._cursor = { x = 1, y = 1 }
   self._scroll = { x = 0, y = 0 }
@@ -131,6 +146,32 @@ function Editor:record(execute, revert)
   self:redo()
 end
 
+---Sets the selection to the given range and anchor.
+---
+---Avoids unnecessary table creation if a selection table already exists.
+---
+---@param startX integer
+---@param startY integer
+---@param stopX integer
+---@param stopY integer
+---@param anchor SelectionAnchor
+function Editor:setSelection(startX, startY, stopX, stopY, anchor)
+  local selection = self._selection
+  if selection then
+    selection.start.x = startX
+    selection.start.y = startY
+    selection.stop.x = stopX
+    selection.stop.y = stopY
+    selection.anchor = anchor
+  else
+    self._selection = {
+      start = { x = startX, y = startY },
+      stop = { x = stopX, y = stopY },
+      anchor = anchor,
+    }
+  end
+end
+
 ---Creates a new function that replaces a range of lines.
 ---
 ---Meant to be used as parameter to `Editor:record()`.
@@ -140,8 +181,15 @@ end
 ---@param text string? The new text to insert.
 ---@param cursorX integer The X-coordinate of the cursor position after the modification.
 ---@param cursorY integer The Y-coordinate of the cursor position after the modification.
+---@param selection Selection? The selection after the modification.
 ---@return fun(editor: Editor) modifier A function that modifies the editor's text and cursor position.
-local function makeModifier(from, to, text, cursorX, cursorY)
+local function makeModifier(from, to, text, cursorX, cursorY, selection)
+  local selectionStartX = selection and selection.start.x
+  local selectionStartY = selection and selection.start.y
+  local selectionStopX = selection and selection.stop.x
+  local selectionStopY = selection and selection.stop.y
+  local selectionAnchor = selection and selection.anchor
+
   return function(editor)
     local lines = splitLines(text)
     local delta = #lines - (to - from + 1)
@@ -152,7 +200,14 @@ local function makeModifier(from, to, text, cursorX, cursorY)
     table.move(lines, 1, #lines, from, editor._lines.text)
 
     editor:invalidateLine(from)
-    editor:setCursor(cursorX, cursorY)
+    editor._cursor.x = cursorX
+    editor._cursor.y = cursorY
+    if selectionStartX then
+      ---@diagnostic disable-next-line: param-type-mismatch
+      editor:setSelection(selectionStartX, selectionStartY, selectionStopX, selectionStopY, selectionAnchor)
+    else
+      editor._selection = nil
+    end
     editor:makeCursorVisible()
   end
 end
@@ -166,9 +221,10 @@ end
 ---@param cursorY integer The Y-coordinate of the cursor position after the modification.
 function Editor:replaceLines(from, to, text, cursorX, cursorY)
   local delta = #splitLines(text) - (to - from + 1)
+  local oldX, oldY = self:getCursor()
   self:record(
     makeModifier(from, to, text, cursorX, cursorY),
-    makeModifier(from, to + delta, mergeLines(self._lines.text, from, to), self:getCursor()))
+    makeModifier(from, to + delta, mergeLines(self._lines.text, from, to), oldX, oldY, self._selection))
 end
 
 ---Undoably replaces a single line with the given text.
@@ -191,9 +247,25 @@ function Editor:removeLine(line, cursorX, cursorY)
   self:replaceLines(line, line, nil, cursorX, cursorY)
 end
 
+---Undoably deletes the currently selected text.
+---
+---Does nothing if there is no selection.
+function Editor:deleteSelection()
+  local selection = self._selection
+  if not selection then return end
+  local start = self._selection.start
+  local stop = self._selection.stop
+  local before = self._lines.text[start.y]:sub(1, start.x - 1)
+  local after = self._lines.text[stop.y]:sub(stop.x)
+  self:replaceLines(start.y, stop.y, before .. after, start.x, start.y)
+end
+
 ---Inserts the given text at the current cursor position.
 ---@param text string?
 function Editor:insert(text)
+  -- TODO: (optionally?) merge deleteSlection history entry with the insert entry
+  self:deleteSelection()
+
   local lines = splitLines(text)
   local x, y = self:getCursor()
   local cursorX = #lines > 1 and #lines[#lines] or x + #text
@@ -237,12 +309,15 @@ end
 ---In other words, deletes the character before the cursor and moves the cursor to the left.
 ---Also joins lines if the cursor is on the first character of the line.
 function Editor:backspace()
-  -- TODO: check for selection
-  local x, y = self:getCursor()
-  if x ~= 1 then
-    self:removeRelative(-1, -1)
-  elseif y ~= 1 then
-    self:replaceLines(y - 1, y, self._lines.text[y - 1] .. self._lines.text[y], #self._lines.text[y - 1] + 1, y - 1)
+  if self._selection then
+    self:deleteSelection()
+  else
+    local x, y = self:getCursor()
+    if x ~= 1 then
+      self:removeRelative(-1, -1)
+    elseif y ~= 1 then
+      self:replaceLines(y - 1, y, self._lines.text[y - 1] .. self._lines.text[y], #self._lines.text[y - 1] + 1, y - 1)
+    end
   end
 end
 
@@ -251,12 +326,15 @@ end
 ---In other words, deletes the character after the cursor without moving the cursor.
 ---Also joins lines if the cursor is past the end of the line.
 function Editor:delete()
-  -- TODO: check for selection
-  local x, y = self:getCursor()
-  if x <= #self._lines.text[y] then
-    self:removeRelative(0, 0)
-  elseif y ~= #self._lines.text then
-    self:replaceLines(y, y + 1, self._lines.text[y] .. self._lines.text[y + 1], x, y)
+  if self._selection then
+    self:deleteSelection()
+  else
+    local x, y = self:getCursor()
+    if x <= #self._lines.text[y] then
+      self:removeRelative(0, 0)
+    elseif y ~= #self._lines.text then
+      self:replaceLines(y, y + 1, self._lines.text[y] .. self._lines.text[y + 1], x, y)
+    end
   end
 end
 
@@ -268,8 +346,10 @@ function Editor:scrollTo(x, y)
   self._scroll.x = math.max(0, x)
   self._scroll.y = math.min(math.max(0, y), #self._lines.text - 1)
   if self._mouseDown then
-    self._cursor.x = self._cursor.x - oldX + self._scroll.x
-    self._cursor.y = self._cursor.y - oldY + self._scroll.y
+    self:setCursor(
+      self._cursor.x - oldX + self._scroll.x,
+      self._cursor.y - oldY + self._scroll.y,
+      true)
   end
 end
 
@@ -318,11 +398,16 @@ end
 ---@param y integer?
 ---@param select boolean?
 function Editor:setCursor(x, y, select)
-  self._selectionStart = select and (self._selectionStart or { x = self._cursor.x, y = self._cursor.y }) or nil
+  local anchorPoint
+  if select then
+    anchorPoint = self._selection
+        and selectionAnchorPoint(self._selection)
+        or { x = self._cursor.x, y = self._cursor.y }
+  end
   self._cursor.x = math.max(1, x or self._cursor.x)
   self._cursor.y = math.min(math.max(1, y or self._cursor.y), #self._lines.text)
-  if select then
-    self:select(self._selectionStart, self._cursor)
+  if anchorPoint then
+    self:select(anchorPoint, self._cursor)
   else
     self._selection = nil
   end
@@ -358,20 +443,25 @@ function Editor:release()
   self._mouseDown = false
 end
 
----Selects everything in the given range.
+---Selects everything from the given anchor point to the other point.
 ---
----`start` does not have to be before `stop`, they will be swapped if necessary.
+---Clears the selection if the points are the same.
 ---
----@param start Point
----@param stop Point
-function Editor:select(start, stop)
-  if start.y > stop.y or start.y == stop.y and start.x > stop.x then
-    start, stop = stop, start
+---@param anchorPoint Point
+---@param other Point
+function Editor:select(anchorPoint, other)
+  if anchorPoint.x == other.x and anchorPoint.y == other.y then
+    self._selection = nil
+  else
+    local anchor
+    if anchorPoint.y > other.y or anchorPoint.y == other.y and anchorPoint.x > other.x then
+      anchorPoint, other = other, anchorPoint
+      anchor = "stop"
+    else
+      anchor = "start"
+    end
+    self:setSelection(anchorPoint.x, anchorPoint.y, other.x, other.y, anchor)
   end
-  self._selection = {
-    start = start,
-    stop = stop,
-  }
 end
 
 ---Clears the entire history, but leaves the document fully intact.
@@ -647,17 +737,118 @@ function Editor:enter(fromEndOfLine)
   self:insert("\n")
 end
 
----Inserts a tab or (un)indents the current selection.
+---Undoably indents the current selection.
+---
+---This more efficient than undentSelection, since indenting is a "lossless" operation.
+---With undenting, differing amounts of whitespace might be removed, making it "lossy".
+function Editor:indentSelection()
+  local cursorX, cursorY = self:getCursor()
+  local selectionStartX = self._selection.start.x
+  local selectionStartY = self._selection.start.y
+  local selectionStopX = self._selection.stop.x
+  local selectionStopY = self._selection.stop.y
+  local selectionAnchor = self._selection.anchor
+
+  self:record(
+    function(editor)
+      local indent = (" "):rep(editor._tabWidth)
+      for i = selectionStartY, selectionStopX == 1 and selectionStopY - 1 or selectionStopY do
+        editor._lines.text[i] = indent .. editor._lines.text[i]
+      end
+      editor._cursor.x = cursorX == 1 and cursorX or cursorX + editor._tabWidth
+      editor._cursor.y = cursorY
+      local newSelectionStartX = selectionStartX == 1 and selectionStartX or selectionStartX + editor._tabWidth
+      local newSelectionStopX = selectionStopX == 1 and selectionStopX or selectionStopX + editor._tabWidth
+      editor:setSelection(newSelectionStartX, selectionStartY, newSelectionStopX, selectionStopY, selectionAnchor)
+      editor:invalidateLine(selectionStartY)
+      editor:makeCursorVisible()
+    end,
+    function(editor)
+      for i = selectionStartY, selectionStopX == 1 and selectionStopY - 1 or selectionStopY do
+        editor._lines.text[i] = editor._lines.text[i]:sub(editor._tabWidth + 1)
+      end
+      editor._cursor.x = cursorX
+      editor._cursor.y = cursorY
+      editor:setSelection(selectionStartX, selectionStartY, selectionStopX, selectionStopY, selectionAnchor)
+      editor:invalidateLine(selectionStartY)
+      editor:makeCursorVisible()
+    end)
+end
+
+---Undoably undents the current selection.
+---
+---This is slightly more complex than indenting, as it has to remember how deep everything was undented.
+---Yes, this has some code duplication with indentSelection, but honestly, I'm just happy it works.
+function Editor:undentSelection()
+  local cursorX, cursorY = self:getCursor()
+  local selectionStartX = self._selection.start.x
+  local selectionStartY = self._selection.start.y
+  local selectionStopX = self._selection.stop.x
+  local selectionStopY = self._selection.stop.y
+  local selectionAnchor = self._selection.anchor
+
+  local undents
+  local canUndent = false
+  for i = selectionStartY, selectionStopX == 1 and selectionStopY - 1 or selectionStopY do
+    local firstNonWhitespace = self._lines.text[i]:find("[^ ]") or #self._lines.text + 1
+    if firstNonWhitespace - 1 < self._tabWidth then
+      undents = undents or {}
+      undents[i - selectionStartY + 1] = firstNonWhitespace - 1
+    end
+    canUndent = canUndent or firstNonWhitespace > 1
+  end
+
+  if not canUndent then return end
+
+  self:record(
+    function(editor)
+      for i = selectionStartY, selectionStopX == 1 and selectionStopY - 1 or selectionStopY do
+        editor._lines.text[i] = editor._lines.text[i]:sub(
+          (undents and undents[i - selectionStartY + 1] or editor._tabWidth) + 1)
+      end
+      local cursorUndents = undents and undents[cursorY - selectionStartY + 1] or editor._tabWidth
+      editor._cursor.x = cursorX == 1 and cursorX or cursorX - cursorUndents
+      editor._cursor.y = cursorY
+      local selectionStartUndents = undents and undents[1] or editor._tabWidth
+      local newSelectionStartX = selectionStartX == 1 and selectionStartX or selectionStartX - selectionStartUndents
+      local selectionStopUndents = undents and undents[selectionStopY - selectionStartY + 1] or editor._tabWidth
+      local newSelectionStopX = selectionStopX == 1 and selectionStopX or selectionStopX - selectionStopUndents
+      editor:setSelection(newSelectionStartX, selectionStartY, newSelectionStopX, selectionStopY, selectionAnchor)
+      editor:invalidateLine(selectionStartY)
+      editor:makeCursorVisible()
+    end,
+    function(editor)
+      for i = selectionStartY, selectionStopX == 1 and selectionStopY - 1 or selectionStopY do
+        editor._lines.text[i] = (" "):rep(
+          undents and undents[i - selectionStartY + 1] or editor._tabWidth) .. editor._lines.text[i]
+      end
+      editor._cursor.x = cursorX
+      editor._cursor.y = cursorY
+      editor:setSelection(selectionStartX, selectionStartY, selectionStopX, selectionStopY, selectionAnchor)
+      editor:invalidateLine(selectionStartY)
+      editor:makeCursorVisible()
+    end)
+end
+
+---Inserts a tab or indents/undents the current selection.
 ---@param shift boolean?
 function Editor:tab(shift)
-  -- TODO: indent entire selection
   local x, y = self:getCursor()
-  if shift then
-    local original = self._lines.text[y]
-    local undented = original:match("^" .. (" ?"):rep(self._tabWidth) .. "(.*)")
-    self:modifyLine(y, undented, x - #original + #undented, y)
+  local selection = self._selection
+  if selection then
+    if shift then
+      self:undentSelection()
+    else
+      self:indentSelection()
+    end
   else
-    self:insert((" "):rep((self._tabWidth - x) % self._tabWidth + 1))
+    if shift then
+      local original = self._lines.text[y]
+      local undented = original:match("^" .. (" ?"):rep(self._tabWidth) .. "(.*)")
+      self:modifyLine(y, undented, x - #original + #undented, y)
+    else
+      self:insert((" "):rep((self._tabWidth - x) % self._tabWidth + 1))
+    end
   end
 end
 
@@ -677,9 +868,9 @@ end
 
 ---Deletes everything until the start of the previous word.
 function Editor:backspaceWord()
-  local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordLeft()
-  if wordX then
+  if wordX and not self._selection then
+    local cursorX, _cursorY = self:getCursor()
     self:remove(wordX, cursorX - 1)
   else
     self:backspace()
@@ -688,9 +879,9 @@ end
 
 ---Deletes everything until the start of the next word.
 function Editor:deleteWord()
-  local cursorX, _cursorY = self:getCursor()
   local wordX = self:findWordRight()
-  if wordX then
+  if wordX and not self._selection then
+    local cursorX, _cursorY = self:getCursor()
     self:remove(cursorX, wordX - 1)
   else
     self:delete()
@@ -748,10 +939,12 @@ end
 ---@param selectionStartY integer
 ---@param selectionStopX integer
 ---@param selectionStopY integer
+---@param selectionAnchor SelectionAnchor
 ---@param from integer
 ---@param to integer
 ---@return fun(editor: Editor)
-local function makeSelectionSwapperUp(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY, from, to)
+local function makeSelectionSwapperUp(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY,
+                                      selectionAnchor, from, to)
   return function(editor)
     local lines = editor._lines.text
     local swapLine = lines[from - 1]
@@ -761,10 +954,7 @@ local function makeSelectionSwapperUp(x, y, selectionStartX, selectionStartY, se
     editor:invalidateLine(from - 1)
     editor._cursor.x = x
     editor._cursor.y = y
-    editor._selection = {
-      start = { x = selectionStartX, y = selectionStartY },
-      stop = { x = selectionStopX, y = selectionStopY },
-    }
+    editor:setSelection(selectionStartX, selectionStartY, selectionStopX, selectionStopY, selectionAnchor)
     editor:makeCursorVisible()
   end
 end
@@ -776,10 +966,12 @@ end
 ---@param selectionStartY integer
 ---@param selectionStopX integer
 ---@param selectionStopY integer
+---@param selectionAnchor SelectionAnchor
 ---@param from integer
 ---@param to integer
 ---@return fun(editor: Editor)
-local function makeSelectionSwapperDown(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY, from, to)
+local function makeSelectionSwapperDown(x, y, selectionStartX, selectionStartY, selectionStopX, selectionStopY,
+                                        selectionAnchor, from, to)
   return function(editor)
     local lines = editor._lines.text
     local swapLine = lines[to + 1]
@@ -789,10 +981,7 @@ local function makeSelectionSwapperDown(x, y, selectionStartX, selectionStartY, 
     editor:invalidateLine(from)
     editor._cursor.x = x
     editor._cursor.y = y
-    editor._selection = {
-      start = { x = selectionStartX, y = selectionStartY },
-      stop = { x = selectionStopX, y = selectionStopY },
-    }
+    editor:setSelection(selectionStartX, selectionStartY, selectionStopX, selectionStopY, selectionAnchor)
     editor:makeCursorVisible()
   end
 end
@@ -812,11 +1001,13 @@ function Editor:swapLinesUp()
           x, y - 1,
           selection.start.x, selection.start.y - 1,
           selection.stop.x, selection.stop.y - 1,
+          selection.anchor,
           selection.start.y, to),
         makeSelectionSwapperDown(
           x, y,
           selection.start.x, selection.start.y,
           selection.stop.x, selection.stop.y,
+          selection.anchor,
           selection.start.y - 1, to - 1))
     end
   elseif y > 1 then
@@ -839,11 +1030,13 @@ function Editor:swapLinesDown()
           x, y + 1,
           selection.start.x, selection.start.y + 1,
           selection.stop.x, selection.stop.y + 1,
+          selection.anchor,
           selection.start.y, to),
         makeSelectionSwapperUp(
           x, y,
           selection.start.x, selection.start.y,
           selection.stop.x, selection.stop.y,
+          selection.anchor,
           selection.start.y + 1, to + 1))
     end
   else
