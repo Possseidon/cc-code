@@ -212,7 +212,6 @@ local function makeModifier(from, to, text, cursorX, cursorY, selection)
   end
 end
 
-
 ---Undoably replaces the given range of lines with the given text.
 ---@param from integer The starting line index to modify.
 ---@param to integer The ending line index to modify.
@@ -263,12 +262,12 @@ end
 ---Inserts the given text at the current cursor position.
 ---@param text string?
 function Editor:insert(text)
-  -- TODO: (optionally?) merge deleteSlection history entry with the insert entry
+  -- TODO: (optionally?) merge deleteSelection history entry with the insert entry
   self:deleteSelection()
 
   local lines = splitLines(text)
   local x, y = self:getCursor()
-  local cursorX = #lines > 1 and #lines[#lines] or x + #text
+  local cursorX = #lines > 1 and #lines[#lines] + 1 or x + #text
   local original = self._lines.text[y]
   if x > #original + 1 then
     local pad = x - #original - 1
@@ -807,7 +806,7 @@ function Editor:undentSelection()
           (undents and undents[i - selectionStartY + 1] or editor._tabWidth) + 1)
       end
       local cursorUndents = undents and undents[cursorY - selectionStartY + 1] or editor._tabWidth
-      editor._cursor.x = cursorX == 1 and cursorX or cursorX - cursorUndents
+      editor._cursor.x = cursorX == 1 and cursorX or math.max(1, cursorX - cursorUndents)
       editor._cursor.y = cursorY
       local selectionStartUndents = undents and undents[1] or editor._tabWidth
       local newSelectionStartX = selectionStartX == 1 and selectionStartX or selectionStartX - selectionStartUndents
@@ -845,7 +844,7 @@ function Editor:tab(shift)
     if shift then
       local original = self._lines.text[y]
       local undented = original:match("^" .. (" ?"):rep(self._tabWidth) .. "(.*)")
-      self:modifyLine(y, undented, x - #original + #undented, y)
+      self:modifyLine(y, undented, math.max(1, x - #original + #undented), y)
     else
       self:insert((" "):rep((self._tabWidth - x) % self._tabWidth + 1))
     end
