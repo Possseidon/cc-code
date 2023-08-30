@@ -144,7 +144,6 @@ function Code:new(filename)
   }
 
   self._editor = Editor()
-  self._savedRevision = nil
 
   self._config = nil
   self._invalidConfig = false
@@ -208,7 +207,7 @@ function Code:open(filename)
     local content = file.readAll() or ""
     file.close()
     self._editor:setContent(content)
-    self:markSaved()
+    self._editor:markSaved()
   end
 end
 
@@ -216,22 +215,11 @@ end
 function Code:updateMultishell()
   if multishell then
     local title = fs.getName(self._filename)
-    if not self:saved() then
+    if not self._editor:saved() then
       title = title .. "*"
     end
     multishell.setTitle(multishell.getCurrent(), title)
   end
-end
-
----Whether the editor matches the current file on disk.
----@return boolean
-function Code:saved()
-  return self._editor:revision() == self._savedRevision
-end
-
----Marks the current state as saved, so that soft exiting won't trigger a warning.
-function Code:markSaved()
-  self._savedRevision = self._editor:revision()
 end
 
 ---Registers all default shortcuts for general purpose editing.
@@ -367,7 +355,7 @@ end
 ---Exits, asking for confirmation on unsaved changes (unless `force` is set to true).
 ---@param force boolean?
 function Code:quit(force)
-  if force or self:saved() then
+  if force or self._editor:saved() then
     self._running = false
   end
   -- TODO: message for normal close without force
@@ -379,7 +367,7 @@ function Code:save()
   local file = assert(fs.open(self._filename, "wb"))
   file.write(content)
   file.close()
-  self:markSaved()
+  self._editor:markSaved()
 end
 
 ---Forwards an event with all its parameters to the `on` table of event handlers.

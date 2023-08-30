@@ -79,6 +79,7 @@ function Editor:new()
   self._scroll = { x = 0, y = 0 }
   self._history = {}
   self._revision = 0
+  self._savedRevision = 0
   self._historyGroupNesting = 0
   self._historyGroupRevision = nil
 
@@ -90,6 +91,17 @@ function Editor:new()
   self._visibleLines = { above = 3, below = 1 }
   self._lineNumberWidth = 3
   self._tabWidth = 2
+end
+
+---Whether the editor matches the last call to markSaved.
+---@return boolean
+function Editor:saved()
+  return self._revision == self._savedRevision
+end
+
+---Marks the current state as saved, so that a call to saved returns true for this revision.
+function Editor:markSaved()
+  self._savedRevision = self._revision
 end
 
 ---All new history entries after this call will be merged together once endHistoryGroup is called.
@@ -185,6 +197,9 @@ function Editor:record(execute, revert)
   end
   table.insert(self._history, { execute = execute, revert = revert })
   self:redo()
+  if self._savedRevision == self._revision then
+    self._savedRevision = nil
+  end
 end
 
 ---Sets the selection to the given range and anchor.
