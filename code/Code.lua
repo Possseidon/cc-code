@@ -56,13 +56,7 @@ function on.key(code, key, _held)
     if action then
       local ok, err = pcall(action, code)
       if not ok then
-        -- TODO: self:setStatus(err)
-        printError(err)
-        ---@diagnostic disable-next-line: undefined-field
-        os.pullEvent("key")
-        code._modifierKeys.ctrl = false
-        code._modifierKeys.shift = false
-        code._modifierKeys.alt = false
+        code:pushToast(err, "error")
       end
       return true
     end
