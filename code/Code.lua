@@ -2,6 +2,16 @@ local Editor = require "code.Editor"
 
 ---@alias Action fun()
 
+---@alias ToastKind
+---|>"success"
+---| "warning"
+---| "error"
+
+---@class Toast
+---@field message string
+---@field kind ToastKind
+---@field timer integer
+
 ---Maps event names to event handlers.
 ---@type table<string, fun(code: Code, ...): boolean?>
 local on = {}
@@ -129,6 +139,23 @@ function on.paste(code, text)
   return true
 end
 
+---A timer was fired.
+---@param code Code
+---@param timer integer
+function on.timer(code, timer)
+  local toastDeleted = false
+
+  for i, toast in ipairs(code._toasts) do
+    if toast.timer == timer then
+      table.remove(code._toasts, i)
+      toastDeleted = true
+      break
+    end
+  end
+
+  return toastDeleted
+end
+
 ---@class Code
 local Code = {}
 
@@ -148,6 +175,9 @@ function Code:new(filename)
   self._config = nil
   self._invalidConfig = false
 
+  ---@type Toast[]
+  self._toasts = {}
+
   self:loadConfig()
   self:registerDefaultShortcuts()
   self:registerConfigShortcuts()
@@ -160,27 +190,42 @@ local defaultConfig = {
   swapYZ = false,
   scrollAmount = 3,
   shortcuts = {},
+  toastDuration = 3,
 }
+
+---Pushes a new toast with the given message.
+---@param message string
+---@param kind ToastKind?
+function Code:pushToast(message, kind)
+  table.insert(self._toasts, {
+    message = message,
+    kind = kind or "success",
+    ---@diagnostic disable-next-line: undefined-field
+    timer = os.startTimer(self._config.toastDuration),
+  })
+end
 
 ---Loads settings from the config file.
 function Code:loadConfig()
   local config
   if fs.exists(configFilename) then
-    local file = assert(fs.open(configFilename, "rb"))
-    local content = file.readAll()
-    file.close()
-    config = textutils.unserialize(content)
+    local file = fs.open(configFilename, "rb")
+    if file then
+      local content = file.readAll()
+      file.close()
+      config = textutils.unserialize(content)
+    end
     if not config then
       self._invalidConfig = true
-      printError("Invalid config file, using default config.")
-      ---@diagnostic disable-next-line: undefined-field
-      os.pullEvent("key")
       config = {}
     end
   else
     config = {}
   end
   self._config = setmetatable(config, { __index = defaultConfig })
+  if self._invalidConfig then
+    self:pushToast("Invalid Config - using default", "warning")
+  end
 end
 
 ---Saves settings to the config file.
@@ -192,9 +237,13 @@ function Code:saveConfig()
     fs.delete(configFilename)
   else
     local content = textutils.serialize(self._config)
-    local file = assert(fs.open(configFilename, "wb"))
-    file.write(content)
-    file.close()
+    local file, error = fs.open(configFilename, "wb")
+    if file then
+      file.write(content)
+      file.close()
+    else
+      self:pushToast(error, "error")
+    end
   end
   setmetatable(self._config, meta)
 end
@@ -203,11 +252,18 @@ end
 ---@param filename string
 function Code:open(filename)
   if fs.exists(filename) then
-    local file = assert(fs.open(filename, "rb"))
-    local content = file.readAll() or ""
-    file.close()
-    self._editor:setContent(content)
-    self._editor:markSaved()
+    local file, error = fs.open(filename, "rb")
+    if file then
+      local content = file.readAll() or ""
+      file.close()
+      self._editor:setContent(content)
+      self._editor:markSaved()
+      self:pushToast(filename .. ": Opened")
+    else
+      self:pushToast(error, "error")
+    end
+  else
+    self:pushToast(filename .. ": New File - not saved yet", "warning")
   end
 end
 
@@ -357,17 +413,23 @@ end
 function Code:quit(force)
   if force or self._editor:saved() then
     self._running = false
+  else
+    self:pushToast(self._filename .. ": Unsaved Changes", "error")
   end
-  -- TODO: message for normal close without force
 end
 
 ---Saves the current state to disk and also marks the current state as "saved" internally.
 function Code:save()
   local content = self._editor:getContent()
-  local file = assert(fs.open(self._filename, "wb"))
-  file.write(content)
-  file.close()
-  self._editor:markSaved()
+  local file, error = fs.open(self._filename, "wb")
+  if file then
+    file.write(content)
+    file.close()
+    self._editor:markSaved()
+    self:pushToast(self._filename .. ": Saved")
+  else
+    self:pushToast(error, "error")
+  end
 end
 
 ---Forwards an event with all its parameters to the `on` table of event handlers.
@@ -384,13 +446,39 @@ function Code:processEvent(event, ...)
   end
 end
 
+---Renders the entire code editor and updates the cursor.
+function Code:render()
+  term.setCursorBlink(false)
+  self._editor:render()
+  self:renderToasts()
+  self._editor:updateCursor()
+end
+
+local toastColors = {
+  success = colors.green,
+  warning = colors.blue,
+  error = colors.red,
+}
+
+---Renders toasts in the bottom right corner of the screen.
+function Code:renderToasts()
+  local width, height = term.getSize()
+  for i, toast in ipairs(self._toasts) do
+    term.setBackgroundColor(colors.white)
+    term.setTextColor(toastColors[toast.kind])
+    local message = " " .. toast.message .. " "
+    term.setCursorPos(width - #message + 1, height - i + 1)
+    term.write(message)
+  end
+end
+
 ---Runs the application until the user exits.
 function Code:run()
-  self._editor:render()
+  self:render()
   while self._running do
     ---@diagnostic disable-next-line: undefined-field
     if self:processEvent(os.pullEvent()) then
-      self._editor:render()
+      self:render()
       self:updateMultishell()
     end
   end

@@ -638,12 +638,7 @@ function Editor:getBlitLine(line)
 end
 
 ---Renders all currently visible lines.
----
----Also temporarly hides the cursor to avoid it from jumping around.
----The cursor is then updated appropriately (hidden if not on screen).
 function Editor:render()
-  term.setCursorBlink(false)
-
   local _width, height = term.getSize()
   for i = 1, height do
     local line = i + self._scroll.y
@@ -655,8 +650,12 @@ function Editor:render()
       term.clearLine()
     end
   end
+end
 
+---Updates the cursor position, color and visibility.
+function Editor:updateCursor()
   if self:isCursorVisible() then
+    term.setTextColor(colors.white)
     term.setCursorPos(self:clientToScreen(self:getCursor()))
     term.setCursorBlink(true)
   else
