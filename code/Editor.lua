@@ -756,10 +756,18 @@ function Editor:cursorWordRight(select)
   end
 end
 
----Moves the cursor to the beginning of the line, possibly dragging along a selection.
+---Moves the cursor to the first non-whitespace character, possibly dragging along a selection.
+---
+---If the cursor is already on the first non-whitespace character it moves to the beginning of the line instead.
+---
 ---@param select boolean?
 function Editor:cursorLineHome(select)
-  self:setCursor(1, self._cursor.y, select)
+  local firstNonWhitespace = self._lines.text[self._cursor.y]:find("[^ ]") or 1
+  if self._cursor.x == firstNonWhitespace then
+    self:setCursor(1, self._cursor.y, select)
+  else
+    self:setCursor(firstNonWhitespace, self._cursor.y, select)
+  end
   self:makeCursorVisible()
 end
 
