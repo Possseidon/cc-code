@@ -79,6 +79,8 @@ function Editor:new()
   self._scroll = { x = 0, y = 0 }
   self._history = {}
   self._revision = 0
+  self._historyGroupNesting = 0
+  self._historyGroupRevision = nil
 
   -- TODO: make dynamic
   self._highlighter = Highlighter(require "code.highlighter.vscode")
@@ -88,6 +90,45 @@ function Editor:new()
   self._visibleLines = { above = 3, below = 1 }
   self._lineNumberWidth = 3
   self._tabWidth = 2
+end
+
+---All new history entries after this call will be merged together once endHistoryGroup is called.
+function Editor:beginHistoryGroup()
+  if self._historyGroupNesting == 0 then
+    self._historyGroupRevision = self._revision + 1
+  end
+  self._historyGroupNesting = self._historyGroupNesting + 1
+end
+
+---Merges after the matching beginHistoryGroup call into a single history entry.
+function Editor:endHistoryGroup()
+  assert(self._historyGroupNesting > 0, "mismatched endHistoryGroup")
+  self._historyGroupNesting = self._historyGroupNesting - 1
+  if self._historyGroupNesting == 0 then
+    if self._historyGroupRevision < #self._history then
+      local group = {}
+      for i = self._historyGroupRevision, #self._history do
+        table.insert(group, self._history[i])
+      end
+      for i = #self._history, self._historyGroupRevision + 1, -1 do
+        self._history[i] = nil
+      end
+      self._history[self._historyGroupRevision] = {
+        execute = function(editor)
+          for i = 1, #group do
+            group[i].execute(editor)
+          end
+        end,
+        revert = function(editor)
+          for i = #group, 1, -1 do
+            group[i].revert(editor)
+          end
+        end,
+      }
+      self._revision = self._historyGroupRevision
+    end
+    self._historyGroupRevision = nil
+  end
 end
 
 ---Invalidates the given line, and in turn everything after as well.
@@ -262,7 +303,8 @@ end
 ---Inserts the given text at the current cursor position.
 ---@param text string?
 function Editor:insert(text)
-  -- TODO: (optionally?) merge deleteSelection history entry with the insert entry
+  self:beginHistoryGroup()
+
   self:deleteSelection()
 
   local lines = splitLines(text)
@@ -275,6 +317,8 @@ function Editor:insert(text)
   else
     self:modifyLine(y, original:sub(1, x - 1) .. text .. original:sub(x), cursorX, y + #lines - 1)
   end
+
+  self:endHistoryGroup()
 end
 
 ---Removes the given range of characters in the current line and moves the cursor to where the text was deleted.
