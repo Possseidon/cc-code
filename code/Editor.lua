@@ -291,15 +291,24 @@ function Editor:modifyLine(line, text, cursorX, cursorY)
   self:replaceLines(line, line, text, cursorX, cursorY)
 end
 
----Undoable removes the given line.
----
----This is just a shorthand for passing `nil` as text for `Editor:modifyLine()`.
----
----@param line integer
----@param cursorX integer
----@param cursorY integer
-function Editor:removeLine(line, cursorX, cursorY)
-  self:replaceLines(line, line, nil, cursorX, cursorY)
+---Undoably deletes the current or selected line/s.
+function Editor:deleteLine()
+  local selection = self._selection
+  if selection then
+    local lastLine = selection.stop.y
+    if selection.stop.x == 1 then
+      lastLine = lastLine - 1
+    end
+    local emptyWorkaround = #self._lines.text == lastLine and "" or nil
+    self:replaceLines(
+      selection.start.y, lastLine, emptyWorkaround,
+      self._cursor.x, selection.start.y)
+  else
+    local emptyWorkaround = #self._lines.text == 1 and "" or nil
+    self:replaceLines(
+      self._cursor.y, self._cursor.y, emptyWorkaround,
+      self._cursor.x, math.max(math.min(self._cursor.y, #self._lines.text - 1), 1))
+  end
 end
 
 ---Undoably deletes the currently selected text.
