@@ -1,6 +1,6 @@
 print("Installing cc-code...")
 
-if fs.exists("code/") and fs.exists("code.lua") then
+if fs.exists("/code") and fs.exists("/code.lua") then
   fs.move("/code", "/code_old/code")
   fs.move("/code.lua", "/code_old/code.lua")
 end
