@@ -15,7 +15,7 @@ local args = { ... }
 if #args ~= 1 then
   printUsage()
   return
-elseif args[1] == "--update"
+elseif args[1] == "--update" then
   update()
   return
 end
