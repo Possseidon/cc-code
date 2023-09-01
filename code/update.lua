@@ -77,8 +77,9 @@ while next(requests) do
     break
   end
 end
-if fs.exists("codeOld/") then
-  fs.delete("code/","codeOld/")
-  fs.delete("code.lua","code.lua.old")
+
+if fs.exists("/code_old") then
+  fs.delete("/code_old")
 end
+
 print("Done!")
