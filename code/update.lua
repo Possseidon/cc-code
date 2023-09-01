@@ -1,8 +1,8 @@
 print("Installing cc-code...")
 
 if fs.exists("code/") and fs.exists("code.lua") then
-  fs.move("code/","codeOld/")
-  fs.move("code.lua","code.lua.old")
+  fs.move("/code", "/code_old/code")
+  fs.move("/code.lua", "/code_old/code.lua")
 end
 
 ---@type table<string, string>
