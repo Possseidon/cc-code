@@ -2,6 +2,20 @@
 
 A code editor for ComputerCraft.
 
+⚠ **ComputerCraft uses `ctrl+S` for shutting down! Use `ctrl+D` to save instead!** ⚠
+
+## Notable Features
+
+- 📦 Easy Install/Update
+- 📝 Common Editing Shortcuts
+- 🌈 Lua Syntax Highlighting
+- 📘 Text Selection
+- 🔄 Full Undo/Redo History
+- 💻 Multishell Integration
+- ⚙ Configurable
+- 🎨 Themable
+- ⚡ *Blazingly Fast*
+
 ## Getting Started
 
 ### Install/Update
