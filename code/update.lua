@@ -1,7 +1,9 @@
 print("Installing cc-code...")
 
-fs.delete("code.lua")
-fs.delete("code")
+if fs.exists("/code") and fs.exists("/code.lua") then
+  fs.move("/code", "/code_old/code")
+  fs.move("/code.lua", "/code_old/code.lua")
+end
 
 ---@type table<string, string>
 local requests = {}
@@ -67,8 +69,17 @@ while next(requests) do
   local ok, err = handleHttpEvent(os.pullEvent())
   if not ok then
     printError(err)
+    if fs.exists("/code_old") then
+      fs.move("/code_old/code", "/code")
+      fs.move("/code_old/code.lua", "/code.lua")
+      print("Recovered old files")
+    end
     break
   end
+end
+
+if fs.exists("/code_old") then
+  fs.delete("/code_old")
 end
 
 print("Done!")
