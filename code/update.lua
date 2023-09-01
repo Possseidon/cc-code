@@ -69,10 +69,10 @@ while next(requests) do
   local ok, err = handleHttpEvent(os.pullEvent())
   if not ok then
     printError(err)
-    if fs.exists("codeOld/") then
-      fs.move("code/","codeOld/")
-      fs.move("code.lua","code.lua.old")
-      print("Recovred old files")
+    if fs.exists("/code_old") then
+      fs.move("/code_old/code", "/code")
+      fs.move("/code_old/code.lua", "/code.lua")
+      print("Recovered old files")
     end
     break
   end
