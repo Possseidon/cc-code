@@ -154,7 +154,6 @@ local function printVersion()
 end
 
 local function update()
-  print("Updating...")
   shell.run("wget run https://raw.githubusercontent.com/Possseidon/cc-code/main/code/update.lua")
 end
 
