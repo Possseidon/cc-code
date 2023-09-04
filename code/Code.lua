@@ -475,7 +475,7 @@ function Code:renderToasts()
     term.setBackgroundColor(colors.white)
     term.setTextColor(toastColors[toast.kind])
     local message = " " .. toast.message .. " "
-    term.setCursorPos(width - #message + 1, height - i + 1)
+    term.setCursorPos(width - #message + 1, height - #self._toasts + i)
     term.write(message)
   end
 end
