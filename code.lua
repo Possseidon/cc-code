@@ -177,6 +177,10 @@ local function run(args)
   term.setBackgroundColor(oldBackgroundColor)
   term.clear()
   term.setCursorPos(1, 1)
+
+  if code._updateOnClose then
+    update()
+  end
 end
 
 local args = parseArgs(...)

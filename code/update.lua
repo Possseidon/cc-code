@@ -4,7 +4,7 @@ local function getOnlineVersion()
   local request, err = http.get("https://api.github.com/repos/Possseidon/cc-code/commits/main")
   if not request then return nil, err end
   local json = request.readAll()
-  if not json then return nil, "could not read from online version request" end
+  request.close()
   local main = textutils.unserializeJSON(json)
   if not main then return nil, "could not parse online version request" end
   return main.sha
@@ -13,9 +13,10 @@ end
 local function getInstalledVersion()
   local f = fs.open(VERSION_FILE, "r")
   if not f then return nil end
-  local version = f.readAll()
+  local text = f.readAll()
   f.close()
-  return version
+  local version = textutils.unserialize(text)
+  return version and version.sha or nil
 end
 
 local function downloadUpdate(dir)
@@ -121,7 +122,11 @@ local function installUpdate(stagingDir, newVersion, oldVersion)
   fs.delete(stagingDir)
 
   local f = assert(fs.open(VERSION_FILE, "w"))
-  f.write(newVersion)
+  f.write(textutils.serialize {
+    ---@diagnostic disable-next-line: undefined-field
+    lastCheck = os.epoch("utc"),
+    sha = newVersion,
+  })
   f.close()
 
   term.setTextColor(colors.lightBlue)
@@ -158,7 +163,7 @@ if onlineVersion == installedVersion then
   term.setTextColor(colors.lightBlue)
   print("cc-code already up to date")
   term.setTextColor(colors.lightGray)
-  print("To force an update, delete /code/version")
+  print("To force a reinstall, delete /code/version")
   return
 end
 

@@ -1,5 +1,23 @@
 local Editor = require "code.Editor"
 
+local CONFIG_FILE = "/.code"
+local VERSION_FILE = "/code/version"
+local LATEST_COMMIT_URL = "https://api.github.com/repos/Possseidon/cc-code/commits/main"
+
+local DEFAULT_CONFIG = {
+  swapYZ = false,
+  scrollAmount = 3,
+  shortcuts = {},
+  toastDuration = 3,
+  ---@type UpdateMode
+  update = "auto",
+}
+
+---@alias UpdateMode
+---| "manual" Does not check for updates at all.
+---| "check"  Pushes a toast if an update is available.
+---| "auto"   Pushes a toast and automatically updates on close.
+
 ---@alias Action fun()
 
 ---@alias ToastKind
@@ -150,6 +168,50 @@ function on.timer(code, timer)
   return toastDeleted
 end
 
+---A http request was successful.
+---@param code Code
+---@param url string
+---@param response table
+function on.http_success(code, url, response)
+  if url == LATEST_COMMIT_URL then
+    local main = textutils.unserializeJSON(response.readAll())
+    if not main or not main.sha then
+      code:pushToast("Update-Check Failed:", "error")
+      code:pushToast("Could not parse GitHub API response as JSON", "error")
+      return true
+    end
+
+    if main.sha == code._installedVersion.sha then return end
+
+    code:pushToast("Update Available!")
+    if code._config.update == "check" then
+      code:pushToast("Run \"code --update\" to update")
+    else
+      code._updateOnClose = true
+      code:pushToast("Close cc-code to update")
+    end
+
+    return true
+  end
+end
+
+---A http request failed.
+---@param code Code
+---@param url string
+---@param err string
+---@param response table?
+function on.http_failure(code, url, err, response)
+  if url == LATEST_COMMIT_URL then
+    code:pushToast("Update-Check Failed:", "error")
+    code:pushToast(err, "error")
+    if response then
+      code:pushToast(response.readAll(), "error")
+    end
+
+    return true
+  end
+end
+
 ---@class Code
 local Code = {}
 
@@ -172,20 +234,15 @@ function Code:new(filename)
   ---@type Toast[]
   self._toasts = {}
 
+  self._updateOnClose = false
+  self._installedVersion = nil
+
   self:loadConfig()
   self:registerDefaultShortcuts()
   self:registerConfigShortcuts()
   self:open(filename)
   self:updateMultishell()
 end
-
-local configFilename = ".code"
-local defaultConfig = {
-  swapYZ = false,
-  scrollAmount = 3,
-  shortcuts = {},
-  toastDuration = 3,
-}
 
 ---Pushes a new toast with the given message.
 ---@param message string
@@ -202,8 +259,8 @@ end
 ---Loads settings from the config file.
 function Code:loadConfig()
   local config
-  if fs.exists(configFilename) then
-    local file = fs.open(configFilename, "rb")
+  if fs.exists(CONFIG_FILE) then
+    local file = fs.open(CONFIG_FILE, "rb")
     if file then
       local content = file.readAll()
       file.close()
@@ -216,7 +273,7 @@ function Code:loadConfig()
   else
     config = {}
   end
-  self._config = setmetatable(config, { __index = defaultConfig })
+  self._config = setmetatable(config, { __index = DEFAULT_CONFIG })
   if self._invalidConfig then
     self:pushToast("Invalid Config - using default", "warning")
   end
@@ -228,10 +285,10 @@ function Code:saveConfig()
   local meta = getmetatable(self._config)
   setmetatable(self._config, nil)
   if next(self._config) == nil then
-    fs.delete(configFilename)
+    fs.delete(CONFIG_FILE)
   else
     local content = textutils.serialize(self._config)
-    local file, error = fs.open(configFilename, "wb")
+    local file, error = fs.open(CONFIG_FILE, "wb")
     if file then
       file.write(content)
       file.close()
@@ -480,8 +537,47 @@ function Code:renderToasts()
   end
 end
 
+---@class Version
+---@field sha string The commit hash of the intalled version.
+---@field lastCheck integer The timestamp of the last update-check.
+
+---Reads the currently installed version information from disk.
+---@return Version?
+local function getInstalledVersion()
+  local f = fs.open(VERSION_FILE, "r")
+  if not f then return nil end
+  local version = f.readAll()
+  f.close()
+  return textutils.unserialize(version)
+end
+
+---Sends an update request if the config requires it and the current version is known.
+function Code:sendUpdateCheckRequest()
+  if self._config.update == "manual" then return end
+
+  self._installedVersion = getInstalledVersion()
+  if not self._installedVersion then return end
+
+  ---@diagnostic disable-next-line: undefined-field
+  local now = os.epoch("utc")
+  if now < self._installedVersion.lastCheck + 60000 then return end
+  self._installedVersion.lastCheck = now
+
+  local version = textutils.serialize(self._installedVersion)
+  local f = fs.open(VERSION_FILE, "w")
+  if not f then return end
+  f.write(version)
+  f.close()
+
+  self:pushToast("Checking for updates...")
+
+  http.request(LATEST_COMMIT_URL)
+end
+
 ---Runs the application until the user exits.
 function Code:run()
+  self:sendUpdateCheckRequest()
+
   self:render()
   while self._running do
     ---@diagnostic disable-next-line: undefined-field
@@ -490,7 +586,7 @@ function Code:run()
       self:updateMultishell()
     end
   end
-  if fs.combine(self._filename) ~= configFilename then
+  if fs.combine(self._filename) ~= CONFIG_FILE then
     self:saveConfig()
   end
 end
