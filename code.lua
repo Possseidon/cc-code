@@ -124,14 +124,14 @@ local function parseArgs(...)
 
   while i <= #raw do
     local arg = raw[i]
-    local long = arg:match("%-%-(.*)")
+    local long = arg:match("^%-%-(.*)")
     if long == "" then
       printError("\"--\" is not allowed")
       allValid = false
     elseif long then
       add(long, true)
     else
-      local shorts = arg:match("%-(.*)")
+      local shorts = arg:match("^%-(.*)")
       if shorts == "" then
         printError("\"-\" is not allowed")
         allValid = false
